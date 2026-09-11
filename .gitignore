@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+
+# Data & Large Files (Keep raw datasets untracked at root)
+/data/
+/dataset/
+/raw_data/
+*.zip
+*.tar.gz
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# IDE specific
+.vscode/
+.idea/
+*.swp
