@@ -16,6 +16,7 @@ model:
 
 data:
   data_dir: null                        # To be specified when GenImage is mounted (e.g., "data/genimage")
+  held_out_test_dir: "C:\\Datasets\\SignalScope\\test"  # Official held-out test benchmark (STRICTLY ISOLATED)
   train_data_path: null                 # Optional explicit path
   val_data_path: null                   # Optional explicit path
   unseen_data_path: null                # Optional explicit path

@@ -18,7 +18,7 @@ import os
 import random
 from collections import Counter
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
@@ -29,6 +29,8 @@ from src.data.inspect_data import (
     detect_generator_from_path,
     inspect_dataset,
 )
+from src.data.path_safety import TestSetContaminationError, validate_path_safety
+
 
 
 class SignalScopeDataset(Dataset):
@@ -74,14 +76,15 @@ def create_development_splits(
     val_unseen_ratio: float = 0.15,
     seed: int = 42,
     unseen_generators: Optional[List[str]] = None,
+    held_out_test_dir: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
-    """Create reproducible, leak-free development splits.
+    r"""Create reproducible, leak-free development splits.
 
     Parameters
     ----------
     data_dir : str
         Path to the development dataset directory.
-        (MUST NOT point to the official held-out test set).
+        (MUST NOT point to the official held-out test set or its ancestors).
     train_ratio : float, default=0.70
     val_seen_ratio : float, default=0.15
     val_unseen_ratio : float, default=0.15
@@ -89,6 +92,9 @@ def create_development_splits(
     unseen_generators : list of str, optional
         Explicit generator names to reserve exclusively for internal_val_unseen.
         If None, automatically reserves one generator family when metadata permits.
+    held_out_test_dir : str or Path, optional
+        Protected held-out evaluation benchmark directory to enforce isolation against.
+        Defaults to configured/default protected directories (e.g. C:\Datasets\SignalScope\test).
 
     Returns
     -------
@@ -100,6 +106,13 @@ def create_development_splits(
         - "split_strategy": "generator_aware" or "stratified_proxy"
         - "split_summary": detailed counts, generator distributions, and ratios
     """
+    # 1. Enforce strict isolation: prevent using or crawling the held-out test set
+    validate_path_safety(
+        data_dir,
+        protected_paths=held_out_test_dir,
+        context_desc="training/development dataset directory",
+    )
+
     inspection = inspect_dataset(data_dir)
     if inspection.get("status") == "dataset_not_found":
         raise FileNotFoundError(f"Cannot split: Dataset directory not found at {data_dir}")

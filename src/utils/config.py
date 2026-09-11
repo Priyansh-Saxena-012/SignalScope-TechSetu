@@ -29,6 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "data_dir": None,               # Real path to be supplied when dataset arrives
+        "held_out_test_dir": r"C:\Datasets\SignalScope\test",  # Official evaluation benchmark (STRICTLY ISOLATED)
         "train_data_path": None,        # Optional explicit train directory
         "val_data_path": None,          # Optional explicit validation directory
         "unseen_data_path": None,       # Optional explicit unseen-generator directory
@@ -93,7 +94,9 @@ def save_config(config: Dict[str, Any], output_path: str) -> None:
 
 
 def validate_config(config: Dict[str, Any]) -> bool:
-    """Validate structure of experiment configuration dictionary."""
+    """Validate structure and safety of experiment configuration dictionary."""
+    from src.data.path_safety import validate_path_safety
+
     required_sections = ["experiment", "model", "data", "training"]
     for sec in required_sections:
         if sec not in config:
@@ -104,5 +107,17 @@ def validate_config(config: Dict[str, Any]) -> bool:
 
     if config["training"].get("epochs", 0) <= 0:
         raise ValueError("training.epochs must be positive.")
+
+    # Validate test-set isolation for configured dataset paths
+    data_cfg = config.get("data", {})
+    held_out_dir = data_cfg.get("held_out_test_dir")
+    for key in ["data_dir", "train_data_path", "val_data_path", "unseen_data_path"]:
+        path_val = data_cfg.get(key)
+        if path_val:
+            validate_path_safety(
+                path_val,
+                protected_paths=held_out_dir,
+                context_desc=f"configuration path 'data.{key}'",
+            )
 
     return True

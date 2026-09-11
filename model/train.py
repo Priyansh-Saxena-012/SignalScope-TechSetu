@@ -26,6 +26,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from model.backbone import build_classifier
+from src.data.path_safety import validate_path_safety
 from src.evaluation.evaluate import compute_metrics
 from src.utils.config import load_config, save_config
 
@@ -82,6 +83,18 @@ class SignalScopeTrainer:
         self.config = config
         self.train_loader = train_loader
         self.val_loader = val_loader
+
+        # 0. Test-Set Isolation Validation
+        data_cfg = config.get("data", {})
+        held_out_dir = data_cfg.get("held_out_test_dir")
+        for key in ["data_dir", "train_data_path", "val_data_path", "unseen_data_path"]:
+            p = data_cfg.get(key)
+            if p:
+                validate_path_safety(
+                    p,
+                    protected_paths=held_out_dir,
+                    context_desc=f"trainer configuration 'data.{key}'",
+                )
 
         # 1. Reproducibility & Output Directory
         self.seed = config["experiment"].get("seed", 42)
