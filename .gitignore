@@ -17,6 +17,7 @@ ENV/
 /data/
 /dataset/
 /raw_data/
+/experiments/
 *.zip
 *.tar.gz
 
