@@ -30,8 +30,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "data": {
         "data_dir": None,               # Real path to be supplied when dataset arrives
         "held_out_test_dir": r"C:\Datasets\SignalScope\test",  # Official evaluation benchmark (STRICTLY ISOLATED)
-        "train_data_path": None,        # Optional explicit train directory
-        "val_data_path": None,          # Optional explicit validation directory
+        "train_data_path": r"C:\Datasets\SignalScope_Train\data\train-*.parquet",
+        "val_data_path": r"C:\Datasets\SignalScope_Train\data\validation-*.parquet",
         "unseen_data_path": None,       # Optional explicit unseen-generator directory
         "train_ratio": 0.70,
         "val_seen_ratio": 0.15,
@@ -48,6 +48,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "warmup_epochs": 1,
         "mixed_precision": True,
         "early_stopping_patience": 2,
+        "num_workers": 0,
+        "max_batches_per_epoch": None,  # Optional limit for local CPU smoke runs
         "device": "auto",               # "cuda", "cpu", or "auto"
     },
     "evaluation": {

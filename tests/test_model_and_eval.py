@@ -11,13 +11,16 @@ CRITICAL: All tests use synthetic arrays and random in-memory tensors only.
 Zero real dataset assumptions are made.
 """
 
+import io
 from pathlib import Path
+import duckdb
 import numpy as np
+from PIL import Image
 import pytest
 import torch
 
 from model.backbone import SUPPORTED_BACKBONES, SignalScopeClassifier, build_classifier
-from model.train import SignalScopeTrainer, resolve_device, set_seed
+from model.train import SignalScopeTrainer, build_dataloaders, resolve_device, set_seed
 from src.evaluation.evaluate import (
     compute_metrics,
     evaluate_with_generator_breakdown,
@@ -176,3 +179,76 @@ def test_trainer_scaffold_initialization(tmp_path):
     assert trainer.optimizer is not None
     assert (tmp_path / "test_run" / "checkpoints").exists()
     assert (tmp_path / "test_run" / "config.yaml").exists()
+
+
+def _create_test_parquet(path: Path, num_samples: int = 4) -> str:
+    """Helper to generate a minimal synthetic Parquet file for training tests."""
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t (image STRUCT(bytes BLOB, path VARCHAR), label BIGINT, generator BIGINT)")
+    for i in range(num_samples):
+        is_ai = i % 2 == 1
+        img = Image.new("RGB", (32, 32), color=(100, 150, 200) if is_ai else (50, 50, 50))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG")
+        conn.execute(
+            "INSERT INTO t VALUES ({bytes: ?, path: ?}, ?, ?)",
+            [buf.getvalue(), f"sample_{i}.jpg", 1 if is_ai else 0, 1 if is_ai else 0],
+        )
+    f_sql = str(path).replace("\\", "/")
+    conn.execute(f"COPY t TO '{f_sql}' (FORMAT PARQUET)")
+    conn.close()
+    return str(path)
+
+
+def test_build_dataloaders_with_mock_parquet(tmp_path):
+    """Verify build_dataloaders connects Parquet sources and produces valid batches."""
+    train_pq = _create_test_parquet(tmp_path / "mock_train.parquet", num_samples=6)
+    val_pq = _create_test_parquet(tmp_path / "mock_val.parquet", num_samples=4)
+
+    cfg = get_default_config()
+    cfg["data"]["train_data_path"] = train_pq
+    cfg["data"]["val_data_path"] = val_pq
+    cfg["training"]["batch_size"] = 2
+    cfg["model"]["image_size"] = 64
+
+    train_loader, val_loader = build_dataloaders(cfg)
+
+    assert len(train_loader.dataset) == 6
+    assert len(val_loader.dataset) == 4
+
+    images, labels, meta = next(iter(train_loader))
+    assert images.shape == (2, 3, 64, 64)
+    assert labels.shape == (2,)
+    assert len(meta["path"]) == 2
+
+
+def test_trainer_fit_one_step_with_mock_parquet(tmp_path):
+    """Verify end-to-end 1-step training execution and checkpoint creation on mock data."""
+    train_pq = _create_test_parquet(tmp_path / "mock_train.parquet", num_samples=4)
+    val_pq = _create_test_parquet(tmp_path / "mock_val.parquet", num_samples=4)
+
+    out_dir = tmp_path / "test_fit_output"
+
+    cfg = get_default_config()
+    cfg["experiment"]["output_dir"] = str(out_dir)
+    cfg["data"]["train_data_path"] = train_pq
+    cfg["data"]["val_data_path"] = val_pq
+    cfg["model"]["pretrained"] = False
+    cfg["model"]["backbone"] = "convnext_tiny"
+    cfg["model"]["image_size"] = 64
+    cfg["training"]["device"] = "cpu"
+    cfg["training"]["batch_size"] = 2
+    cfg["training"]["epochs"] = 1
+    cfg["training"]["max_batches_per_epoch"] = 1
+
+    train_loader, val_loader = build_dataloaders(cfg)
+    trainer = SignalScopeTrainer(cfg, train_loader=train_loader, val_loader=val_loader)
+
+    results = trainer.fit()
+
+    assert results["final_epoch"] == 1
+    assert "best_val_roc_auc" in results
+    assert (out_dir / "checkpoints" / "checkpoint_epoch_01.pth").exists()
+    assert (out_dir / "checkpoints" / "checkpoint_best.pth").exists()
+    assert (out_dir / "checkpoints" / "model_weights_fp16.pth").exists()
+    assert (out_dir / "history.json").exists()

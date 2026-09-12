@@ -17,8 +17,8 @@ model:
 data:
   data_dir: null                        # To be specified when GenImage is mounted (e.g., "data/genimage")
   held_out_test_dir: "C:\\Datasets\\SignalScope\\test"  # Official held-out test benchmark (STRICTLY ISOLATED)
-  train_data_path: null                 # Optional explicit path
-  val_data_path: null                   # Optional explicit path
+  train_data_path: "C:\\Datasets\\SignalScope_Train\\data\\train-*.parquet"
+  val_data_path: "C:\\Datasets\\SignalScope_Train\\data\\validation-*.parquet"
   unseen_data_path: null                # Optional explicit path
   train_ratio: 0.70
   val_seen_ratio: 0.15
@@ -35,6 +35,8 @@ training:
   warmup_epochs: 1
   mixed_precision: true                 # Enabled for 2x faster GPU training
   early_stopping_patience: 2
+  num_workers: 0                        # Safe default for Windows DataLoader
+  max_batches_per_epoch: null           # Null for full training, set integer for fast verification
   device: "auto"                        # Automatically selects CUDA if available, else CPU
 
 evaluation:
