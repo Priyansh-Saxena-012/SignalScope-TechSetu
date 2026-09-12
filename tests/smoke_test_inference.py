@@ -1,4 +1,4 @@
-r"""SignalScope 10-Image Pipeline Smoke Test.
+"""SignalScope 10-Image Pipeline Smoke Test.
 
 Verifies end-to-end functionality:
 Image Loading -> Preprocessing/Transforms -> Model Forward Pass -> Probability Generation -> Metrics Evaluation.
