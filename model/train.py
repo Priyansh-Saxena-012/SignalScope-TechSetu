@@ -136,18 +136,34 @@ class SignalScopeTrainer:
         weight_decay = float(train_cfg.get("weight_decay", 1e-2))
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
-        # 5. Mixed Precision Scaler
+        # 5. Learning Rate Scheduler
+        scheduler_type = train_cfg.get("scheduler", "cosine")
+        epochs = int(train_cfg.get("epochs", 5))
+        min_lr = float(train_cfg.get("min_lr", 1e-6))
+        if scheduler_type == "cosine":
+            self.scheduler: Optional[Any] = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(1, epochs), eta_min=min_lr
+            )
+        elif scheduler_type is None or scheduler_type == "none":
+            self.scheduler = None
+        else:
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(1, epochs), eta_min=min_lr
+            )
+
+        # 6. Mixed Precision Scaler
         use_amp = bool(train_cfg.get("mixed_precision", True)) and self.device.type == "cuda"
         self.scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         self.use_amp = use_amp
 
-        # 6. Training History
+        # 7. Training History
         self.history: Dict[str, list] = {
             "train_loss": [],
             "val_loss": [],
             "val_roc_auc": [],
             "val_accuracy": [],
             "val_macro_f1": [],
+            "learning_rate": [],
         }
         self.best_val_auc = 0.0
 
@@ -161,6 +177,7 @@ class SignalScopeTrainer:
             "backbone": self.model.backbone_name,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
             "val_roc_auc": val_auc,
             "config": self.config,
         }
@@ -213,19 +230,27 @@ class SignalScopeTrainer:
         return metrics
 
     def fit(self) -> Dict[str, Any]:
-        """Execute training loop over configured epochs with early stopping."""
+        """Execute training loop over configured epochs with early stopping and lr scheduling."""
         if self.train_loader is None or self.val_loader is None:
             raise ValueError("Cannot train: train_loader or val_loader is not set.")
 
         epochs = self.config["training"].get("epochs", 5)
         patience = self.config["training"].get("early_stopping_patience", 2)
         max_batches = self.config["training"].get("max_batches_per_epoch")
+        log_interval = self.config["training"].get("log_interval", 50)
         no_improvement_count = 0
+
+        total_train_batches = len(self.train_loader) if hasattr(self.train_loader, "__len__") else 0
+        effective_batches = min(total_train_batches, max_batches) if (max_batches and total_train_batches) else (max_batches or total_train_batches)
 
         for epoch in range(1, epochs + 1):
             self.model.train()
             running_loss = 0.0
             total_train_samples = 0
+            current_lr = self.optimizer.param_groups[0]["lr"]
+            self.history["learning_rate"].append(current_lr)
+
+            print(f"\n--- Epoch {epoch}/{epochs} [LR: {current_lr:.6e}] ---")
 
             for batch_idx, (images, labels, _) in enumerate(self.train_loader):
                 if max_batches and batch_idx >= max_batches:
@@ -246,7 +271,24 @@ class SignalScopeTrainer:
                 running_loss += loss.item() * images.size(0)
                 total_train_samples += images.size(0)
 
+                step_num = batch_idx + 1
+                is_log_step = (
+                    step_num == 1
+                    or step_num % log_interval == 0
+                    or (effective_batches and step_num == effective_batches)
+                )
+                if is_log_step:
+                    batch_avg_loss = running_loss / total_train_samples
+                    batch_str = f"[{step_num}/{effective_batches}]" if effective_batches else f"[{step_num}]"
+                    print(f"  Epoch {epoch} {batch_str} - Running Loss: {batch_avg_loss:.4f}")
+
             epoch_train_loss = running_loss / total_train_samples if total_train_samples > 0 else 0.0
+
+            # Step scheduler after training epoch
+            if self.scheduler is not None:
+                self.scheduler.step()
+
+            print(f"  Validating Epoch {epoch}...")
             val_metrics = self.evaluate(self.val_loader)
             raw_auc = val_metrics.get("roc_auc")
             current_auc = 0.0 if (raw_auc is None or (isinstance(raw_auc, float) and np.isnan(raw_auc))) else float(raw_auc)
@@ -264,10 +306,22 @@ class SignalScopeTrainer:
             else:
                 no_improvement_count += 1
 
+            best_indicator = " (* Best)" if is_best else ""
+            print(
+                f"  Epoch {epoch} Summary - "
+                f"Train Loss: {epoch_train_loss:.4f} | "
+                f"Val Loss: {val_metrics['loss']:.4f} | "
+                f"Val ROC-AUC: {current_auc:.4f} | "
+                f"Val Acc: {val_metrics['accuracy']:.4f} | "
+                f"Val F1: {val_metrics['macro_f1']:.4f}"
+                f"{best_indicator}"
+            )
+
             self.save_checkpoint(epoch, current_auc, is_best=is_best)
 
             # Early stopping check
             if no_improvement_count >= patience:
+                print(f"  Early stopping triggered: no improvement for {patience} consecutive epochs.")
                 break
 
         # Save history log

@@ -50,6 +50,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "early_stopping_patience": 2,
         "num_workers": 0,
         "max_batches_per_epoch": None,  # Optional limit for local CPU smoke runs
+        "log_interval": 50,             # Periodic batch logging frequency
         "device": "auto",               # "cuda", "cpu", or "auto"
     },
     "evaluation": {

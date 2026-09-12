@@ -252,3 +252,77 @@ def test_trainer_fit_one_step_with_mock_parquet(tmp_path):
     assert (out_dir / "checkpoints" / "checkpoint_best.pth").exists()
     assert (out_dir / "checkpoints" / "model_weights_fp16.pth").exists()
     assert (out_dir / "history.json").exists()
+
+
+def test_scheduler_step_and_lr_decay(tmp_path):
+    """Verify CosineAnnealingLR scheduler steps after each epoch and saves state in checkpoints."""
+    train_pq = _create_test_parquet(tmp_path / "mock_train.parquet", num_samples=4)
+    val_pq = _create_test_parquet(tmp_path / "mock_val.parquet", num_samples=4)
+    out_dir = tmp_path / "test_sched_output"
+
+    cfg = get_default_config()
+    cfg["experiment"]["output_dir"] = str(out_dir)
+    cfg["data"]["train_data_path"] = train_pq
+    cfg["data"]["val_data_path"] = val_pq
+    cfg["model"]["pretrained"] = False
+    cfg["model"]["backbone"] = "convnext_tiny"
+    cfg["model"]["image_size"] = 64
+    cfg["training"]["device"] = "cpu"
+    cfg["training"]["batch_size"] = 2
+    cfg["training"]["epochs"] = 3
+    cfg["training"]["max_batches_per_epoch"] = 1
+    cfg["training"]["scheduler"] = "cosine"
+    cfg["training"]["learning_rate"] = 1e-4
+
+    train_loader, val_loader = build_dataloaders(cfg)
+    trainer = SignalScopeTrainer(cfg, train_loader=train_loader, val_loader=val_loader)
+
+    assert trainer.scheduler is not None
+
+    results = trainer.fit()
+
+    assert results["final_epoch"] == 3
+    history = results["history"]
+    assert "learning_rate" in history
+    assert len(history["learning_rate"]) == 3
+
+    # Check that learning rate decayed monotonically via cosine schedule
+    assert history["learning_rate"][0] > history["learning_rate"][1]
+    assert history["learning_rate"][1] > history["learning_rate"][2]
+
+    # Verify checkpoint contains scheduler_state_dict
+    ckpt = torch.load(out_dir / "checkpoints" / "checkpoint_best.pth")
+    assert "scheduler_state_dict" in ckpt
+    assert ckpt["scheduler_state_dict"] is not None
+
+
+def test_training_progress_logging(tmp_path, capsys):
+    """Verify informative progress messages are emitted during training."""
+    train_pq = _create_test_parquet(tmp_path / "mock_train.parquet", num_samples=4)
+    val_pq = _create_test_parquet(tmp_path / "mock_val.parquet", num_samples=4)
+    out_dir = tmp_path / "test_log_output"
+
+    cfg = get_default_config()
+    cfg["experiment"]["output_dir"] = str(out_dir)
+    cfg["data"]["train_data_path"] = train_pq
+    cfg["data"]["val_data_path"] = val_pq
+    cfg["model"]["pretrained"] = False
+    cfg["model"]["backbone"] = "convnext_tiny"
+    cfg["model"]["image_size"] = 64
+    cfg["training"]["device"] = "cpu"
+    cfg["training"]["batch_size"] = 2
+    cfg["training"]["epochs"] = 1
+    cfg["training"]["max_batches_per_epoch"] = 1
+    cfg["training"]["log_interval"] = 1
+
+    train_loader, val_loader = build_dataloaders(cfg)
+    trainer = SignalScopeTrainer(cfg, train_loader=train_loader, val_loader=val_loader)
+
+    _ = trainer.fit()
+    captured = capsys.readouterr().out
+
+    assert "Epoch 1/1" in captured
+    assert "Running Loss" in captured
+    assert "Validating Epoch 1" in captured
+    assert "Epoch 1 Summary" in captured
+

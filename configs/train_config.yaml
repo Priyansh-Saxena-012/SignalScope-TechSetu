@@ -37,6 +37,7 @@ training:
   early_stopping_patience: 2
   num_workers: 0                        # Safe default for Windows DataLoader
   max_batches_per_epoch: null           # Null for full training, set integer for fast verification
+  log_interval: 50                      # Periodic batch progress logging frequency
   device: "auto"                        # Automatically selects CUDA if available, else CPU
 
 evaluation:
