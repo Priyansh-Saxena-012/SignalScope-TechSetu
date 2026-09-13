@@ -11,3 +11,6 @@ pillow==10.2.0
 
 # Testing & Verification
 pytest==8.1.1
+
+# Demo UI
+streamlit==1.32.0
