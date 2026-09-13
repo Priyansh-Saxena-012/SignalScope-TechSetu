@@ -14,6 +14,7 @@ Tests:
 
 import os
 from pathlib import Path
+import sys
 import pytest
 
 from model.train import SignalScopeTrainer
@@ -43,6 +44,10 @@ def test_rejection_exact_test_directory():
     assert "100,000-image" in err_msg
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and case folding)",
+)
 def test_rejection_exact_test_directory_variations():
     """Verify case-insensitivity, forward slashes, and redundant slashes are normalized and rejected."""
     variations = [
@@ -57,6 +62,10 @@ def test_rejection_exact_test_directory_variations():
             validate_path_safety(p)
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslash hierarchy)",
+)
 def test_rejection_parent_of_test_directory():
     """Verify that any parent directory containing the held-out test set is rejected."""
     parents = [
@@ -74,6 +83,10 @@ def test_rejection_parent_of_test_directory():
         assert "is a parent/ancestor directory containing" in err_msg
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslash hierarchy)",
+)
 def test_rejection_subdirectory_of_test_directory():
     """Verify that any subfolder inside the held-out test set is rejected."""
     subfolders = [
@@ -159,6 +172,10 @@ def test_create_development_splits_rejects_test_directory():
     assert "[FATAL TEST CONTAMINATION DETECTED]" in str(exc_info.value)
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslash hierarchy)",
+)
 def test_create_development_splits_rejects_parent_directory():
     r"""Verify create_development_splits rejects parent directory C:\Datasets\SignalScope."""
     with pytest.raises(TestSetContaminationError) as exc_info:
@@ -185,6 +202,10 @@ def test_create_development_splits_accepts_isolated_mock_dataset(tmp_path):
 
 # --- 4. Integration with Config Validation & Trainer Scaffold ---
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslash hierarchy)",
+)
 def test_validate_config_rejects_contaminated_data_dir():
     """Verify validate_config catches unsafe paths in data.data_dir."""
     cfg = get_default_config()
@@ -204,6 +225,10 @@ def test_validate_config_rejects_contaminated_data_dir():
     assert validate_config(cfg) is True
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslash hierarchy)",
+)
 def test_trainer_scaffold_rejects_contaminated_config():
     """Verify SignalScopeTrainer initialization rejects contaminated dataset paths."""
     cfg = get_default_config()

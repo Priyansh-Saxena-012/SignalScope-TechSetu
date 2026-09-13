@@ -14,6 +14,7 @@ Tests:
 import io
 import os
 from pathlib import Path
+import sys
 import duckdb
 from PIL import Image
 import pytest
@@ -164,7 +165,13 @@ def test_test_set_isolation_rejection(tmp_path):
     with pytest.raises(TestSetContaminationError):
         TinyGenImageParquetDataset(str(bad_file), held_out_test_dir=str(mock_held_out))
 
-    # Also verify official default path rejection
+
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="Requires Windows filesystem path semantics (drive letters and backslashes)",
+)
+def test_test_set_isolation_rejection_default_windows_path():
+    """Verify official default Windows test path rejection."""
     with pytest.raises(TestSetContaminationError):
         TinyGenImageParquetDataset(r"C:\Datasets\SignalScope\test\data.parquet")
 
