@@ -27,14 +27,14 @@ data:
 
 training:
   batch_size: 32                        # Batch size for Colab T4 GPU
-  epochs: 5                             # Training epochs (governed by early stopping)
-  learning_rate: 0.0001
+  epochs: 12                            # Training epochs (governed by early stopping)
+  learning_rate: 0.00005
   weight_decay: 0.01
   optimizer: "adamw"
   scheduler: "cosine"
   warmup_epochs: 1
   mixed_precision: true                 # Enabled for 2x faster GPU training
-  early_stopping_patience: 2
+  early_stopping_patience: 4
   num_workers: 0                        # Safe default for Windows DataLoader
   max_batches_per_epoch: null           # Null for full training, set integer for fast verification
   log_interval: 50                      # Periodic batch progress logging frequency
