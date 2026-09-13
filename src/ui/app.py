@@ -282,10 +282,34 @@ def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
         st.subheader("Authenticity Assessment")
         _render_assessment(result)
 
-        show_cam = st.toggle("Show Attention Heatmap (Demo Overlay — Grad-CAM Pending)")
+        show_cam = st.toggle("Show Patch Decision Saliency (Experimental)")
         if show_cam:
-            heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
-            st.image(heatmap, caption="Localized suspicious regions (synthetic demo overlay)", use_column_width=True)
+            if not result.get("is_demo_mode", False):
+                try:
+                    from model.predict import get_model
+                    from model.explain import generate_explanation
+                    live_model, device, _ = get_model()
+                    if live_model is not None:
+                        saliency_map, eval_crop, overlay_img = generate_explanation(uploaded_image, live_model, device=device)
+                        st.image(
+                            overlay_img,
+                            caption="Experimental relative patch attribution on the 224×224 evaluation crop",
+                            use_column_width=True,
+                        )
+                        st.caption(
+                            "Relative patch saliency on a 14×14 grid, highlighting regions that contributed above average "
+                            "toward the AI-generated decision. This illustrates model decision focus and is not a pixel-level forgery mask."
+                        )
+                    else:
+                        heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
+                        st.image(heatmap, caption="Localized suspicious regions (synthetic demo overlay)", use_column_width=True)
+                except Exception:
+                    heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
+                    st.image(heatmap, caption="Localized suspicious regions (synthetic demo overlay)", use_column_width=True)
+            else:
+                heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
+                st.image(heatmap, caption="Localized suspicious regions (synthetic demo overlay)", use_column_width=True)
+                st.caption("Demo Mode — synthetic placeholder overlay (trained weights not yet available)")
 
 
 def _render_tab2(uploaded_image: Optional[Image.Image]) -> None:
@@ -360,7 +384,9 @@ def _render_tab3() -> None:
         "- Metrics above are placeholders until final official held-out benchmark evaluation completes on the official held-out test set.\n"
         "- Robustness to heavy compression and unseen generator families has not yet been empirically validated.\n"
         "- Video and multi-frame content are out of scope for this detector.\n"
-        "- Generator attribution is Undetermined and attention overlays are synthetic demo placeholders pending dedicated attribution/explainability modules."
+        "- Generator attribution is Undetermined because the ViT baseline operates as a binary veracity detector.\n"
+        "- Decision saliency is an experimental relative attribution method operating at 16×16 patch resolution. "
+        "It highlights regions driving the AI logit, but does not explain authenticity (realness) and is not a pixel-level forgery or tamper mask."
     )
 
 
