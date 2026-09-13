@@ -82,9 +82,11 @@ def test_predict_returns_valid_schema(temp_image):
     assert validate_prediction_schema(result) is True
 
 
-def test_stub_honestly_indicates_model_unavailable(temp_image):
-    """Verify that the Stage 1 stub does not fake predictions."""
+def test_stub_honestly_indicates_model_unavailable(temp_image, monkeypatch):
+    """Verify that the Stage 1 stub does not fake predictions when weights are unavailable."""
     clear_model_cache()
+    monkeypatch.setattr("model.predict.DEFAULT_CHECKPOINT_PATHS", [])
+    monkeypatch.delenv("SIGNALSCOPE_CHECKPOINT", raising=False)
     result = predict(temp_image, allow_stub=True)
 
     # Must indicate that actual model is not trained yet
@@ -103,15 +105,19 @@ def test_predict_raises_on_missing_file():
         predict("non_existent_image_file_path.jpg", allow_stub=True)
 
 
-def test_cli_predict_contract(temp_image):
+def test_cli_predict_contract(temp_image, tmp_path, mock_vit_checkpoint_path):
     """Verify that model/predict.py can be invoked via CLI and outputs valid JSON."""
-    cmd = [
+    # 1. Verify stub JSON output when weights are unavailable
+    nonexistent_weights = str(tmp_path / "nonexistent_weights.pth")
+    cmd_stub = [
         sys.executable,
         os.path.join("model", "predict.py"),
         "--image",
         temp_image,
+        "--weights",
+        nonexistent_weights,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd_stub, capture_output=True, text=True)
 
     assert proc.returncode == 0, f"CLI invocation failed with error: {proc.stderr}"
 
@@ -119,6 +125,24 @@ def test_cli_predict_contract(temp_image):
     assert isinstance(output_data, dict)
     assert validate_prediction_schema(output_data) is True
     assert output_data["label"] == "MODEL_NOT_TRAINED"
+
+    # 2. Verify live JSON output when trained checkpoint is provided
+    cmd_live = [
+        sys.executable,
+        os.path.join("model", "predict.py"),
+        "--image",
+        temp_image,
+        "--weights",
+        mock_vit_checkpoint_path,
+    ]
+    proc_live = subprocess.run(cmd_live, capture_output=True, text=True)
+    assert proc_live.returncode == 0, f"CLI live invocation failed with error: {proc_live.stderr}"
+
+    live_data = json.loads(proc_live.stdout)
+    assert isinstance(live_data, dict)
+    assert validate_prediction_schema(live_data) is True
+    assert live_data["status"] == "success"
+    assert live_data["label"] in ("AI-generated", "Real")
 
 
 def test_predict_with_weights_contract(temp_image, mock_vit_checkpoint_path):
@@ -171,6 +195,7 @@ def test_ui_predict_mock_and_live(temp_image, mock_vit_checkpoint_path, monkeypa
 
     # 1. When weights are absent: UI should run in demo mode
     clear_model_cache()
+    monkeypatch.setattr("model.predict.DEFAULT_CHECKPOINT_PATHS", [])
     monkeypatch.delenv("SIGNALSCOPE_CHECKPOINT", raising=False)
     demo_result = ui_app.predict(test_img)
     assert demo_result["is_demo_mode"] is True

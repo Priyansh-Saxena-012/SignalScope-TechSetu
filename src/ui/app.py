@@ -1,16 +1,12 @@
 """SignalScope Streamlit Demo UI.
 
-Provides a demo-facing authenticity assessment interface: image upload,
-calibrated-likelihood verdict, generator attribution, Grad-CAM-style
-explanation, a degradation robustness playground, and a static evaluation
-report.
+Provides an authenticity assessment interface: image upload,
+AI-generated probability verdict, generator attribution, attention-heatmap
+explanation, a degradation robustness playground, and an evaluation report.
 
-This module defines its own richer, UI-facing prediction schema and is
-intentionally decoupled from ``model.predict``'s Stage-1 contract (which is
-locked by ``tests/test_predict_contract.py`` and must not change here). If
-``model.predict`` is importable and returns a real (non-stub) result, this
-module could be adapted to use it directly; today it always falls back to a
-clearly-labeled mock so the frontend/demo does not have to wait on training.
+Supports live inference with the trained ViT-Base/16 checkpoint via
+``model.predict.predict()`` when weights are available, falling back to a
+clearly-labeled mock demo mode when no checkpoint is available.
 """
 
 from __future__ import annotations
@@ -134,9 +130,9 @@ def _mock_result(image: Image.Image) -> Dict[str, Any]:
 def predict(image: Image.Image) -> Dict[str, Any]:
     """Return a UI-facing authenticity assessment for ``image``.
 
-    Tries the real ``model.predict`` contract first; falls back to a clearly
-    labeled mock whenever real weights are unavailable (currently always,
-    since ``model/weights/`` has no trained checkpoint yet).
+    Tries the real ``model.predict`` contract first using trained checkpoint
+    weights when available; falls back to a clearly labeled mock mode
+    whenever trained weights are not available.
     """
     if MODEL_AVAILABLE:
         # delete=False + manual cleanup: on Windows, a NamedTemporaryFile
@@ -175,8 +171,8 @@ def build_heatmap_overlay(image: Image.Image, seed: int) -> Image.Image:
     """Generate a synthetic attention-heatmap overlay for demo purposes.
 
     Produces a smoothed, seeded noise field, colorizes it (yellow->red), and
-    alpha-blends it over the source image. This stands in for a real
-    Grad-CAM array until the trained model exposes one.
+    alpha-blends it over the source image. This serves as a synthetic demo
+    placeholder until a dedicated Grad-CAM/explainability module is integrated.
     """
     rgb = image.convert("RGB")
     w, h = rgb.size
@@ -243,7 +239,7 @@ def _render_assessment(result: Dict[str, Any]) -> None:
 
     prob = result["calibrated_probability"]
     st.metric(
-        label="Calibrated Likelihood (AI-generated)",
+        label="AI-generated probability",
         value=f"{prob * 100:.1f}%",
         delta=result["confidence_level"] + " confidence",
         delta_color="off",
@@ -286,7 +282,7 @@ def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
         st.subheader("Authenticity Assessment")
         _render_assessment(result)
 
-        show_cam = st.toggle("Show Attention Heatmap (Grad-CAM)")
+        show_cam = st.toggle("Show Attention Heatmap (Demo Overlay — Grad-CAM Pending)")
         if show_cam:
             heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
             st.image(heatmap, caption="Localized suspicious regions (synthetic demo overlay)", use_column_width=True)
@@ -329,8 +325,19 @@ def _render_tab2(uploaded_image: Optional[Image.Image]) -> None:
 
 
 def _render_tab3() -> None:
-    st.write("### Model Evaluation on Held-Out Unseen Generators")
-    st.caption("Preliminary — pending Stage 4 final held-out benchmark. Numbers below are placeholders, not final results.")
+    st.write("### Development Validation Set (Stage 9 Baseline)")
+    st.caption("Evaluated on 7,000 Tiny-GenImage development validation images. These are development validation results, NOT official held-out benchmark results.")
+
+    dev_metrics_table = [
+        {"Metric": "Validation Samples", "Value": "7,000"},
+        {"Metric": "ROC-AUC (Overall)", "Value": "0.8562"},
+        {"Metric": "Macro-F1", "Value": "0.7834"},
+        {"Metric": "Accuracy", "Value": "78.34%"},
+    ]
+    st.table(dev_metrics_table)
+
+    st.write("### Official Held-Out Benchmark (100k)")
+    st.caption("Preliminary — pending final official held-out benchmark (Stage 10). Numbers below are placeholders, not final results.")
 
     metrics_table = [
         {"Metric": "ROC-AUC (Overall)", "Value": "TBD"},
@@ -350,10 +357,10 @@ def _render_tab3() -> None:
 
     st.markdown("**Known Limitations**")
     st.markdown(
-        "- Metrics above are placeholders until Stage 4 training/evaluation completes on the official held-out test set.\n"
+        "- Metrics above are placeholders until final official held-out benchmark evaluation completes on the official held-out test set.\n"
         "- Robustness to heavy compression and unseen generator families has not yet been empirically validated.\n"
         "- Video and multi-frame content are out of scope for this detector.\n"
-        "- Attribution family and Grad-CAM overlays shown elsewhere in this app are demo mocks until real weights are trained."
+        "- Generator attribution is Undetermined and attention overlays are synthetic demo placeholders pending dedicated attribution/explainability modules."
     )
 
 
