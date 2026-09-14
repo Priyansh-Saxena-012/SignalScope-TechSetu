@@ -1,0 +1,15 @@
+{
+  "backbone": "vit_base_patch16_224",
+  "image_size": 224,
+  "threshold": 0.5,
+  "trained_on": "CIFAKE (10,000-image train subset, round 3: 5,000 REAL / 5,000 FAKE, disjoint from prior rounds)",
+  "evaluated_on": "CIFAKE test subset (2,000 images: 1,000 REAL / 1,000 FAKE)",
+  "best_epoch": 4,
+  "val_roc_auc": 0.9887,
+  "val_accuracy": 0.9507,
+  "test_roc_auc": 0.9841,
+  "test_accuracy": 0.9405,
+  "weights_file": "model_weights_fp16.pth",
+  "weights_dtype": "fp16 (cast to fp32 at load time for inference)",
+  "source_run": "experiments/baseline_vit_v3"
+}

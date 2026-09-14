@@ -24,6 +24,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 # Ensure project root is in sys.path when executed directly (python src/model/train.py)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -32,10 +33,31 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.model.backbone import build_classifier
 from src.data.dataset import SignalScopeDataset, create_development_splits
+from src.data.inspect_data import VALID_IMAGE_EXTENSIONS, detect_class_from_path, detect_generator_from_path
 from src.data.path_safety import validate_path_safety
 from src.data.transforms import get_eval_transforms, get_train_transforms
 from src.evaluation.evaluate import compute_metrics
 from src.utils.config import load_config, save_config
+
+
+def load_samples_from_dir(data_dir: str) -> list:
+    """Enumerate (path, label, generator) samples from a real/fake image directory.
+
+    Unlike ``create_development_splits``, this does not partition the directory —
+    every image found is returned. Used to load a standalone test set (e.g. a
+    held-out benchmark) that should be evaluated whole, not split further.
+    """
+    root_path = Path(data_dir)
+    samples = []
+    for p in root_path.rglob("*"):
+        if not p.is_file() or p.suffix.lower() not in VALID_IMAGE_EXTENSIONS:
+            continue
+        cls = detect_class_from_path(p)
+        if cls == "real":
+            samples.append((str(p), 0, "real"))
+        elif cls == "synthetic":
+            samples.append((str(p), 1, detect_generator_from_path(p, root_path)))
+    return samples
 
 
 def set_seed(seed: int = 42) -> None:
@@ -136,7 +158,21 @@ class SignalScopeTrainer:
         self.scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         self.use_amp = use_amp
 
-        # 6. Training History
+        # 6. Optional Quick Test-Set Loader (evaluated every epoch for progress monitoring)
+        self.test_loader: Optional[DataLoader] = None
+        if held_out_dir and os.path.isdir(held_out_dir):
+            image_size = model_cfg.get("image_size", 224)
+            test_samples = load_samples_from_dir(held_out_dir)
+            if test_samples:
+                test_dataset = SignalScopeDataset(test_samples, transform=get_eval_transforms(image_size))
+                self.test_loader = DataLoader(
+                    test_dataset,
+                    batch_size=train_cfg.get("batch_size", 32),
+                    shuffle=False,
+                    num_workers=train_cfg.get("num_workers", 2),
+                )
+
+        # 7. Training History
         self.history: Dict[str, list] = {
             "train_loss": [],
             "val_loss": [],
@@ -144,6 +180,9 @@ class SignalScopeTrainer:
             "val_accuracy": [],
             "val_macro_f1": [],
         }
+        if self.test_loader is not None:
+            self.history["test_roc_auc"] = []
+            self.history["test_accuracy"] = []
         self.best_val_auc = 0.0
 
         # Save copy of configuration into output directory
@@ -175,7 +214,7 @@ class SignalScopeTrainer:
 
         return str(ckpt_path)
 
-    def evaluate(self, loader: DataLoader) -> Dict[str, Any]:
+    def evaluate(self, loader: DataLoader, desc: str = "Evaluating") -> Dict[str, Any]:
         """Compute validation loss and core metrics across a DataLoader."""
         self.model.eval()
         total_loss = 0.0
@@ -183,7 +222,7 @@ class SignalScopeTrainer:
         all_probs = []
 
         with torch.no_grad():
-            for images, labels, _ in loader:
+            for images, labels, _ in tqdm(loader, desc=desc, leave=False):
                 images = images.to(self.device)
                 labels = labels.to(self.device).float()
 
@@ -214,8 +253,10 @@ class SignalScopeTrainer:
         for epoch in range(1, epochs + 1):
             self.model.train()
             running_loss = 0.0
+            samples_seen = 0
 
-            for images, labels, _ in self.train_loader:
+            progress = tqdm(self.train_loader, desc=f"Epoch {epoch}/{epochs} [train]", leave=False)
+            for images, labels, _ in progress:
                 images = images.to(self.device)
                 labels = labels.to(self.device).float()
 
@@ -230,9 +271,11 @@ class SignalScopeTrainer:
                 self.scaler.update()
 
                 running_loss += loss.item() * images.size(0)
+                samples_seen += images.size(0)
+                progress.set_postfix(loss=f"{running_loss / samples_seen:.4f}")
 
             epoch_train_loss = running_loss / len(self.train_loader.dataset)
-            val_metrics = self.evaluate(self.val_loader)
+            val_metrics = self.evaluate(self.val_loader, desc=f"Epoch {epoch}/{epochs} [val]")
             current_auc = val_metrics.get("roc_auc") or 0.0
 
             self.history["train_loss"].append(round(epoch_train_loss, 4))
@@ -240,6 +283,19 @@ class SignalScopeTrainer:
             self.history["val_roc_auc"].append(current_auc)
             self.history["val_accuracy"].append(val_metrics["accuracy"])
             self.history["val_macro_f1"].append(val_metrics["macro_f1"])
+
+            summary = (
+                f"Epoch {epoch}/{epochs} | train_loss={epoch_train_loss:.4f} "
+                f"| val_loss={val_metrics['loss']:.4f} val_auc={current_auc:.4f} val_acc={val_metrics['accuracy']:.4f}"
+            )
+
+            if self.test_loader is not None:
+                test_metrics = self.evaluate(self.test_loader, desc=f"Epoch {epoch}/{epochs} [test]")
+                self.history["test_roc_auc"].append(test_metrics.get("roc_auc") or 0.0)
+                self.history["test_accuracy"].append(test_metrics["accuracy"])
+                summary += f" | test_auc={test_metrics.get('roc_auc') or 0.0:.4f} test_acc={test_metrics['accuracy']:.4f}"
+
+            tqdm.write(summary)
 
             is_best = current_auc > self.best_val_auc
             if is_best:
