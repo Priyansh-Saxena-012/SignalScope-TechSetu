@@ -34,10 +34,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 try:
     from src.model.predict import predict as _model_predict
+    from src.model.predict import MODEL_CARD_PATH
     MODEL_AVAILABLE = True
 except ImportError:
     _model_predict = None
+    MODEL_CARD_PATH = None
     MODEL_AVAILABLE = False
+
+
+def _load_model_card() -> Optional[Dict[str, Any]]:
+    """Read the deployed model's metadata (backbone, eval metrics) if present."""
+    if MODEL_CARD_PATH is None or not MODEL_CARD_PATH.exists():
+        return None
+    import json
+    return json.loads(MODEL_CARD_PATH.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -336,31 +346,65 @@ def _render_tab2(uploaded_image: Optional[Image.Image]) -> None:
 
 
 def _render_tab3() -> None:
-    st.write("### Model Evaluation on Held-Out Unseen Generators")
-    st.caption("Preliminary — pending Stage 4 final held-out benchmark. Numbers below are placeholders, not final results.")
+    st.write("### Model Evaluation")
+
+    card = _load_model_card() if MODEL_AVAILABLE else None
+
+    if card is None:
+        st.caption("Preliminary — pending training. Numbers below are placeholders, not final results.")
+
+        metrics_table = [
+            {"Metric": "ROC-AUC (Overall)", "Value": "TBD"},
+            {"Metric": "ROC-AUC (Unseen-Generator Split)", "Value": "TBD"},
+            {"Metric": "Macro-F1", "Value": "TBD"},
+            {"Metric": "Accuracy", "Value": "TBD"},
+            {"Metric": "Expected Calibration Error (ECE)", "Value": "TBD"},
+        ]
+        st.table(metrics_table)
+
+        st.markdown("**Confusion Matrix (placeholder)**")
+        confusion_table = [
+            {"": "Actual: Real", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
+            {"": "Actual: AI", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
+        ]
+        st.table(confusion_table)
+
+        st.markdown("**Known Limitations**")
+        st.markdown(
+            "- Metrics above are placeholders until training completes and a model is exported.\n"
+            "- Robustness to heavy compression and unseen generator families has not yet been empirically validated.\n"
+            "- Video and multi-frame content are out of scope for this detector.\n"
+            "- Attribution family and Grad-CAM overlays shown elsewhere in this app are demo mocks until real weights are trained."
+        )
+        return
+
+    st.caption(
+        f"Live metrics from the currently deployed checkpoint (backbone: {card.get('backbone', 'unknown')}, "
+        f"best epoch {card.get('best_epoch', '?')})."
+    )
 
     metrics_table = [
-        {"Metric": "ROC-AUC (Overall)", "Value": "TBD"},
-        {"Metric": "ROC-AUC (Unseen-Generator Split)", "Value": "TBD"},
-        {"Metric": "Macro-F1", "Value": "TBD"},
-        {"Metric": "Accuracy", "Value": "TBD"},
-        {"Metric": "Expected Calibration Error (ECE)", "Value": "TBD"},
+        {"Metric": "ROC-AUC (Internal Validation Split)", "Value": f"{card.get('val_roc_auc', 'N/A'):.4f}" if isinstance(card.get("val_roc_auc"), (int, float)) else "N/A"},
+        {"Metric": "ROC-AUC (Held-Out Test Split)", "Value": f"{card.get('test_roc_auc', 'N/A'):.4f}" if isinstance(card.get("test_roc_auc"), (int, float)) else "N/A"},
+        {"Metric": "Accuracy (Internal Validation Split)", "Value": f"{card.get('val_accuracy', 'N/A'):.2%}" if isinstance(card.get("val_accuracy"), (int, float)) else "N/A"},
+        {"Metric": "Accuracy (Held-Out Test Split)", "Value": f"{card.get('test_accuracy', 'N/A'):.2%}" if isinstance(card.get("test_accuracy"), (int, float)) else "N/A"},
+        {"Metric": "Macro-F1 / Expected Calibration Error", "Value": "Not tracked by current pipeline"},
     ]
     st.table(metrics_table)
 
-    st.markdown("**Confusion Matrix (placeholder)**")
-    confusion_table = [
-        {"": "Actual: Real", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
-        {"": "Actual: AI", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
-    ]
-    st.table(confusion_table)
+    st.markdown("**Confusion Matrix**")
+    st.caption("Not currently computed/exported by the training pipeline — only summary ROC-AUC/accuracy are tracked in the model card.")
+
+    st.markdown("**Dataset**")
+    st.write(f"Trained on: {card.get('trained_on', 'N/A')}")
+    st.write(f"Evaluated on: {card.get('evaluated_on', 'N/A')}")
 
     st.markdown("**Known Limitations**")
     st.markdown(
-        "- Metrics above are placeholders until Stage 4 training/evaluation completes on the official held-out test set.\n"
+        "- These are internal development-split metrics (CIFAKE), not the official Stage 4 held-out generalization benchmark.\n"
         "- Robustness to heavy compression and unseen generator families has not yet been empirically validated.\n"
         "- Video and multi-frame content are out of scope for this detector.\n"
-        "- Attribution family and Grad-CAM overlays shown elsewhere in this app are demo mocks until real weights are trained."
+        "- Attribution family and Grad-CAM overlays shown elsewhere in this app remain demo mocks — this model only performs binary real-vs-AI classification."
     )
 
 

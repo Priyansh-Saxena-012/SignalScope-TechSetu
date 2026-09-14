@@ -2,8 +2,8 @@
 # Configurable for Google Colab GPU training and local reproducibility.
 
 experiment:
-  name: "signalscope_baseline_vit_v3"
-  output_dir: "experiments/baseline_vit_v3"
+  name: "signalscope_baseline_vit_v4"
+  output_dir: "experiments/baseline_vit_v4"
   seed: 42
   description: "SignalScope primary candidate (ViT-Base/16) on GenImage dataset"
 
@@ -15,7 +15,7 @@ model:
   image_size: 224
 
 data:
-  data_dir: "data/train_subset"          # 10,000-image balanced subset of CIFAKE train (REAL/ vs FAKE/)
+  data_dir: "data/train_subset"          # 70,000-image balanced subset of CIFAKE train (REAL/ vs FAKE/) - all remaining unused images
   train_data_path: null                 # Unused by the loader (create_development_splits reads data_dir)
   val_data_path: null                   # Unused by the loader (create_development_splits reads data_dir)
   held_out_test_dir: "data/test_subset"  # 2,000-image balanced subset of CIFAKE test (evaluated every epoch)
