@@ -1,6 +1,6 @@
 # SignalScope — Generative Media Forensics
 
-**Smart India Hackathon 2026** | **Software Edition** | **Team TechSetu**
+**Smart India Hackathon 2026** | **Software Edition** | **Team Priyansh Saxena**
 
 ---
 
@@ -341,7 +341,7 @@ SignalScope enforces explicit integrity rules throughout the codebase:
 ## 19. Hackathon Information
 
 - **Event**: Smart India Hackathon 2026 (Software Edition)
-- **Team**: TechSetu
+- **Team**: Priyansh Saxena
 - **Institution**: L. J. Institute of Engineering and Technology
 
 ---
