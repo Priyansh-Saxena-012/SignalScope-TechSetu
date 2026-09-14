@@ -58,7 +58,7 @@ flowchart TD
         B --> I[PNG Chunk Inspector]
         B --> J[JUMBF / C2PA Byte Scanner]
         H --> K[Privacy Redaction: GPS & Serials]
-        I --> L[Generator Signature Heuristics]
+        I --> L[Metadata / Software Signature Heuristics]
         J --> M[Manifest Verification Logic]
         K & L & M --> N[Structured Provenance Schema]
     end
@@ -80,14 +80,14 @@ flowchart TD
 - **Classification Head**: Linear projection layer mapping 768-dimensional CLS token embeddings to a single scalar logit ($z \in \mathbb{R}$).
 - **Activation & Output**: Sigmoid mapping $\sigma(z) \to p_{\text{AI}} \in [0.0, 1.0]$.
 - **Label Mapping**:
-  - `0` = Real (natural camera capture)
-  - `1` = AI-generated (synthesized)
+  - `0` = Real
+  - `1` = AI-generated
 - **Decision Boundary**: Fixed at threshold $\tau = 0.50$ (`is_ai = bool(p_ai >= 0.50)`).
 - **Evaluation Preprocessing**: Deterministic pipeline using standard ImageNet normalization statistics:
   $$\text{Resize}(256) \longrightarrow \text{CenterCrop}(224) \longrightarrow \text{ToTensor}() \longrightarrow \text{Normalize}(\mu, \sigma)$$
   - Mean: $[0.485, 0.456, 0.406]$
   - Std: $[0.229, 0.224, 0.225]$
-- **Training Configuration**: Trained on the Tiny-GenImage development dataset using AdamW optimizer ($\text{lr}=10^{-4}$, $\text{weight\_decay}=10^{-2}$), cosine learning rate decay, and data augmentations (random Gaussian blur, random JPEG compression simulation, and random horizontal flip).
+- **Training Configuration**: Trained on the Tiny-GenImage development dataset using AdamW optimizer (`learning_rate = 1e-4`, `weight_decay = 0.01`), cosine learning rate decay, and data augmentations (random Gaussian blur, random JPEG compression simulation, and random horizontal flip).
 
 ---
 
