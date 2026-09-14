@@ -198,3 +198,28 @@ def format_evaluation_report(results: Dict[str, Any]) -> str:
 
     lines.append("=" * 65)
     return "\n".join(lines)
+
+
+def compute_calibration_metrics(
+    y_true: Union[np.ndarray, List[int]],
+    y_scores: Union[np.ndarray, List[float]],
+    n_bins: int = 15,
+) -> Dict[str, Any]:
+    """Compute calibration metrics: Negative Log-Likelihood, Brier score, and ECE.
+
+    Parameters
+    ----------
+    y_true : array-like of shape (N,)
+        Binary ground-truth labels (0 for Real, 1 for AI-generated).
+    y_scores : array-like of shape (N,)
+        Continuous probabilities for the positive class (AI).
+    n_bins : int, default=15
+        Number of bins for Expected Calibration Error (ECE).
+
+    Returns
+    -------
+    dict
+        Dictionary containing NLL, Brier score, ECE, and MCE.
+    """
+    from model.calibrate import compute_all_calibration_metrics
+    return compute_all_calibration_metrics(y_true, y_scores, n_bins=n_bins)

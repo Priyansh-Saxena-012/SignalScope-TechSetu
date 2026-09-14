@@ -20,6 +20,7 @@ ENV/
 /experiments/
 *.zip
 *.tar.gz
+*.pth
 
 # OS specific
 .DS_Store

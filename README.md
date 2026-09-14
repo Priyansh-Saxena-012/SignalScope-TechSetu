@@ -122,6 +122,27 @@ flowchart TD
 | **Stable Diffusion v1.5 (SD15)** | 0.9437 |
 | **Wukong** | 0.9513 |
 
+### Post-Hoc Probability Calibration (Temperature Scaling)
+SignalScope employs formal **post-hoc temperature scaling** to calibrate prediction probabilities without altering model weights or decision boundaries:
+- **Fitting Dataset**: Fitted exclusively on the 7,000-image **development validation partition** (3,500 Real + 3,500 AI-generated).
+- **Benchmark Isolation**: The official 100k held-out benchmark was **NOT** used or accessed for calibration.
+- **Weights & Threshold Invariance**: Backbone weights and the fixed $\tau = 0.50$ operating decision threshold remain completely unmodified.
+- **Mathematical Formula**: Calibrated continuous probability is computed as $p_{\text{AI}} = \sigma(z / T)$ on raw logit $z$ with scalar temperature $T > 0$.
+- **Optimal Temperature**: **$T = 1.9591$** (optimized via Negative Log-Likelihood minimization).
+- **Calibration Artifact**: Stored with audit metadata in [`model/weights/temperature.json`](model/weights/temperature.json).
+
+| Metric | Before Calibration ($T = 1.0$) | After Calibration ($T = 1.9591$) | Improvement / Change |
+| :--- | :---: | :---: | :---: |
+| **Negative Log-Likelihood (NLL)** | 0.5442 | **0.4726** | **-0.0716** (13.2% relative reduction) |
+| **Brier Score (MSE)** | 0.1608 | **0.1533** | **-0.0075** (4.7% improvement) |
+| **Expected Calibration Error (ECE)** | 0.0845 | **0.0238** | **-0.0607** (71.8% error reduction) |
+| **Maximum Calibration Error (MCE)** | 0.1770 | **0.0569** | **-0.1201** (67.9% reduction) |
+| **Decision Threshold ($\tau$)** | 0.50 | 0.50 | *Strictly unchanged* |
+| **ROC-AUC / Accuracy** | 0.8562 / 78.34% | 0.8562 / 78.34% | *Strictly rank-invariant* |
+
+> [!NOTE]
+> Post-hoc calibrated probability scores ($p_{\text{AI}}$) provide well-calibrated statistical likelihoods that align observed empirical accuracy with model confidence, but remain probabilistic estimations rather than legal proof of AI generation.
+
 ---
 
 ## 7. Official Held-Out Benchmark
@@ -202,12 +223,15 @@ SignalScope/
 │   └── train_config.yaml         # Training and experiment hyperparameter configuration
 ├── model/
 │   ├── backbone.py               # Vision classifier and swappable model architectures
+│   ├── calibrate.py              # Post-hoc temperature scaling calibration engine & runner
 │   ├── evaluate_held_out.py      # Official 100k held-out benchmark evaluator
 │   ├── evaluate_robustness.py    # 15-condition empirical robustness benchmark runner
 │   ├── explain.py                # Experimental ViT contrast-centered patch saliency
 │   ├── predict.py                # Standardized CLI and programmatic inference interface
 │   ├── train.py                  # Training pipeline with mixed-precision and validation
-│   └── weights/                  # Checkpoint storage (local weights untracked in git)
+│   └── weights/
+│       ├── checkpoint_best.pth   # Frozen ViT-Base/16 production weights (untracked in git)
+│       └── temperature.json      # Post-hoc temperature calibration parameters
 ├── report/
 │   ├── provenance_metadata.md    # Stage 13 Provenance & Metadata forensic report
 │   └── robustness_evaluation.md  # Stage 12 Robustness framework report
@@ -217,7 +241,7 @@ SignalScope/
 │   │   ├── path_safety.py        # Path isolation guards preventing test-set contamination
 │   │   └── transforms.py         # Data augmentation and deterministic evaluation transforms
 │   ├── evaluation/
-│   │   ├── evaluate.py           # Core metric calculations (AUC, F1, FPR, confusion matrix)
+│   │   ├── evaluate.py           # Core metric calculations (AUC, F1, FPR, confusion matrix, ECE)
 │   │   └── robustness.py         # In-memory degradation transforms and metrics
 │   ├── provenance/
 │   │   ├── analyzer.py           # Top-level provenance orchestrator and schema builder
@@ -226,6 +250,7 @@ SignalScope/
 │   └── ui/
 │       └── app.py                # Streamlit interactive forensic dashboard
 ├── tests/
+│   ├── test_calibration.py       # Unit & contract tests for temperature scaling & metrics
 │   ├── test_explain.py           # Unit tests for patch saliency and hook cleanup
 │   ├── test_model_and_eval.py    # Backbone forward passes, metrics, and trainer tests
 │   ├── test_predict_contract.py  # Prediction contract, schema, and CLI tests

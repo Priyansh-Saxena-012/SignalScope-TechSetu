@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 # Ensure project root is in sys.path for direct script execution
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +30,7 @@ from PIL import Image
 import torch
 
 from model.backbone import build_classifier, SignalScopeClassifier
+from model.calibrate import DEFAULT_TEMPERATURE_PATH, load_temperature
 from src.data.transforms import get_eval_transforms
 from src.provenance.analyzer import analyze_provenance
 
@@ -162,6 +164,8 @@ def predict(
     allow_stub: bool = True,
     weights_path: Optional[str] = None,
     device: Optional[torch.device] = None,
+    temperature_path: Optional[Union[str, Path]] = None,
+    allow_uncalibrated_fallback: bool = True,
 ) -> Dict[str, Any]:
     """Run inference on an input image.
 
@@ -177,6 +181,13 @@ def predict(
         Path to model weights/checkpoint file.
     device : torch.device, optional
         Device to run inference on.
+    temperature_path : str or Path, optional
+        Explicit path to temperature.json calibration artifact.
+        Defaults to model/weights/temperature.json.
+    allow_uncalibrated_fallback : bool, default=True
+        If True, falls back safely to uncalibrated raw sigmoid (T=1.0) when calibration
+        artifact is not found.
+        If False, raises FileNotFoundError when calibration artifact is missing.
 
     Returns
     -------
@@ -214,9 +225,24 @@ def predict(
 
     with torch.no_grad():
         logits = model(tensor)
-        prob = torch.sigmoid(logits).item()
+        raw_logit_val = float(logits.item())
+
+    # Load post-hoc calibration temperature (T > 0)
+    temperature, is_calibrated = load_temperature(
+        artifact_path=temperature_path,
+        allow_uncalibrated_fallback=allow_uncalibrated_fallback,
+    )
+
+    # Formal temperature scaling: calibrated_p = sigmoid(raw_logit / T)
+    scaled_logit = raw_logit_val / float(temperature)
+    # Numerically safe sigmoid calculation
+    if scaled_logit >= 0:
+        prob = 1.0 / (1.0 + math.exp(-scaled_logit))
+    else:
+        prob = math.exp(scaled_logit) / (1.0 + math.exp(scaled_logit))
 
     ai_probability = float(prob)
+    # Strict invariance: decision threshold remains 0.50
     is_ai = bool(ai_probability >= 0.5)
     label = "AI-generated" if is_ai else "Real"
     confidence = ai_probability if is_ai else (1.0 - ai_probability)
@@ -234,11 +260,13 @@ def predict(
         "confidence": round(confidence, 4),
         "is_ai": is_ai,
         "ai_probability": round(ai_probability, 4),
-        "raw_logit": round(float(logits.item()), 4),
+        "raw_logit": round(raw_logit_val, 4),
+        "temperature": round(float(temperature), 4),
+        "is_calibrated": is_calibrated,
         "status": "success",
         "generator_family": "Undetermined",
         "explanation": {
-            "summary": "ViT-Base/16 baseline classifier prediction. Detailed forensic localization and generator attribution are not yet implemented.",
+            "summary": "ViT-Base/16 baseline classifier prediction with post-hoc temperature calibration. Detailed forensic localization and generator attribution are not yet implemented.",
             "cues": [],
         },
         "metadata": metadata_payload,
@@ -275,6 +303,12 @@ def main() -> None:
         help="Optional path to model checkpoint/weights file.",
     )
     parser.add_argument(
+        "--temperature",
+        type=str,
+        default=None,
+        help="Optional path to temperature.json calibration artifact.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         default=True,
@@ -284,7 +318,12 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        result = predict(args.image, allow_stub=True, weights_path=args.weights)
+        result = predict(
+            args.image,
+            allow_stub=True,
+            weights_path=args.weights,
+            temperature_path=args.temperature,
+        )
         print(json.dumps(result, indent=2))
     except Exception as exc:
         print(json.dumps({"error": str(exc)}, indent=2), file=sys.stderr)

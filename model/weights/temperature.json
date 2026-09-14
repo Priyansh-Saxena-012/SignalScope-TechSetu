@@ -1,0 +1,51 @@
+{
+  "calibration": {
+    "temperature": 1.959057,
+    "fitting_method": "temperature_scaling_nll_minimization",
+    "objective": "negative_log_likelihood",
+    "decision_threshold": 0.5,
+    "formula": "calibrated_probability = sigmoid(raw_logit / temperature)"
+  },
+  "dataset": {
+    "name": "Tiny-GenImage Development Validation Partition",
+    "type": "development_validation_split",
+    "is_held_out_benchmark": false,
+    "total_samples": 7000,
+    "class_distribution": {
+      "real": 3500,
+      "ai_generated": 3500
+    }
+  },
+  "model": {
+    "checkpoint_file": "checkpoint_best.pth",
+    "checkpoint_sha256": "3bd756f4e7558709b8d94a5c05a09ca64d1d8a4a98940a2a1adafff793306834",
+    "architecture": "vit_base_patch16_224",
+    "parameters_modified": false,
+    "checkpoint_modified": false
+  },
+  "metrics": {
+    "before_calibration": {
+      "nll": 0.544208,
+      "brier_score": 0.160799,
+      "ece": 0.084495,
+      "mce": 0.176951,
+      "n_bins": 15
+    },
+    "after_calibration": {
+      "nll": 0.472584,
+      "brier_score": 0.153251,
+      "ece": 0.023752,
+      "mce": 0.056903,
+      "n_bins": 15
+    },
+    "improvements": {
+      "nll_delta": -0.071624,
+      "brier_delta": -0.007548,
+      "ece_delta": -0.060743
+    }
+  },
+  "metadata": {
+    "timestamp": "2026-09-14T13:31:27.049620+00:00",
+    "python_version": "3.11.16"
+  }
+}
