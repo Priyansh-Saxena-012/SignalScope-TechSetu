@@ -157,6 +157,7 @@ def predict(image: Image.Image) -> Dict[str, Any]:
                 "generator_family": raw.get("generator_family", "Undetermined"),
                 "explanation": raw.get("explanation", {"summary": "", "cues": []}),
                 "metadata": raw.get("metadata", {"c2pa_present": False, "exif_intact": True}),
+                "provenance": raw.get("provenance", {}),
                 "is_demo_mode": False,
             }
 
@@ -255,14 +256,65 @@ def _render_assessment(result: Dict[str, Any]) -> None:
 
 
 def _render_metadata_card(image: Image.Image, result: Dict[str, Any]) -> None:
-    meta = result["metadata"]
-    st.markdown("**Source Metadata**")
+    meta = result.get("metadata", {})
+    prov = meta.get("provenance", {})
+    st.markdown("**Source & Provenance Metadata**")
     st.write(f"Resolution: {image.width} x {image.height} px")
     st.write(f"Color Mode: {image.mode}")
-    c2pa_text = "C2PA Signature: Present" if meta["c2pa_present"] else "C2PA Signature: None Found"
-    exif_text = "EXIF: Intact" if meta["exif_intact"] else "EXIF: Stripped"
+
+    c2pa_meta = prov.get("c2pa", {})
+    val_state = c2pa_meta.get("validation_state", "NOT_PRESENT")
+    if val_state == "VALID_C2PA":
+        c2pa_text = "C2PA Credentials: Valid Cryptographic Signature"
+    elif val_state == "UNVERIFIED_MANIFEST":
+        c2pa_text = "C2PA Credentials: Manifest Present (Unverified Signature)"
+    elif meta.get("c2pa_present"):
+        c2pa_text = "C2PA Credentials: Structure Detected"
+    else:
+        c2pa_text = "C2PA Credentials: None Found"
+
+    exif_meta = prov.get("exif", {})
+    gen_ind = prov.get("generation_indicators", {})
+    if gen_ind.get("known_ai_software_flag"):
+        exif_text = "Metadata Signature: AI Generator Pattern Detected"
+    elif meta.get("exif_intact") or exif_meta.get("present"):
+        cam_info = []
+        if exif_meta.get("camera_make"):
+            cam_info.append(exif_meta["camera_make"])
+        if exif_meta.get("camera_model"):
+            cam_info.append(exif_meta["camera_model"])
+        cam_str = f" ({' '.join(cam_info)})" if cam_info else ""
+        exif_text = f"EXIF: Hardware Tags Intact{cam_str}"
+    else:
+        exif_text = "EXIF: Stripped / Absent"
+
     st.write(c2pa_text)
     st.write(exif_text)
+
+    # Contextual forensic detail accordion
+    if prov:
+        with st.expander("Forensic Metadata Details (Auxiliary)"):
+            st.caption(
+                "Notice: Metadata is an auxiliary forensic signal and does not override "
+                "or alter the neural detector prediction. Missing EXIF does not prove AI generation."
+            )
+            if exif_meta.get("gps_redacted"):
+                st.info("Privacy Safeguard: Geospatial coordinates (GPS) were detected and redacted.")
+            if exif_meta.get("serial_redacted"):
+                st.info("Privacy Safeguard: Device serial numbers have been masked.")
+
+            if exif_meta.get("software"):
+                st.write(f"Software: {exif_meta['software']}")
+            if exif_meta.get("datetime_original"):
+                st.write(f"Timestamp: {exif_meta['datetime_original']}")
+            if gen_ind.get("generator_signature"):
+                st.warning(f"Generation Signature: {gen_ind['generator_signature']}")
+            
+            notes = prov.get("forensic_notes", [])
+            if notes:
+                st.markdown("**Forensic Notes:**")
+                for note in notes:
+                    st.markdown(f"- {note}")
 
 
 def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:

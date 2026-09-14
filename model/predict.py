@@ -30,6 +30,7 @@ import torch
 
 from model.backbone import build_classifier, SignalScopeClassifier
 from src.data.transforms import get_eval_transforms
+from src.provenance.analyzer import analyze_provenance
 
 # Standardized output schema definition
 REQUIRED_SCHEMA_KEYS = {"label": str, "confidence": float, "is_ai": bool}
@@ -220,6 +221,14 @@ def predict(
     label = "AI-generated" if is_ai else "Real"
     confidence = ai_probability if is_ai else (1.0 - ai_probability)
 
+    # Auxiliary provenance and metadata analysis (never alters model prediction or probability)
+    provenance_result = analyze_provenance(image_path)
+    metadata_payload = {
+        "c2pa_present": provenance_result.get("c2pa_present", False),
+        "exif_intact": provenance_result.get("exif_intact", False),
+        "provenance": provenance_result.get("provenance", {}),
+    }
+
     return {
         "label": label,
         "confidence": round(confidence, 4),
@@ -232,10 +241,8 @@ def predict(
             "summary": "ViT-Base/16 baseline classifier prediction. Detailed forensic localization and generator attribution are not yet implemented.",
             "cues": [],
         },
-        "metadata": {
-            "c2pa_present": False,
-            "exif_intact": True,
-        },
+        "metadata": metadata_payload,
+        "provenance": provenance_result.get("provenance", {}),
         "device": str(target_device),
         "weights_path": str(loaded_weights_path),
     }
