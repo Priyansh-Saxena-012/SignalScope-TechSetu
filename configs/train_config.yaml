@@ -15,10 +15,10 @@ model:
   image_size: 224
 
 data:
-  data_dir: null                        # To be specified when GenImage is mounted (e.g., "data/genimage")
-  held_out_test_dir: "C:\\Datasets\\SignalScope\\test"  # Official held-out test benchmark (STRICTLY ISOLATED)
-  train_data_path: null                 # Optional explicit path
-  val_data_path: null                   # Optional explicit path
+  data_dir: "data"                      # Local image-folder dataset (real/ vs fake/ subdirs)
+  train_data_path: null                 # Unused by the loader (create_development_splits reads data_dir)
+  val_data_path: null                   # Unused by the loader (create_development_splits reads data_dir)
+  held_out_test_dir: "C:\\Datasets\\SignalScope\\test"  # Official evaluation benchmark (STRICTLY ISOLATED)
   unseen_data_path: null                # Optional explicit path
   train_ratio: 0.70
   val_seen_ratio: 0.15
@@ -36,6 +36,7 @@ training:
   mixed_precision: true                 # Enabled for 2x faster GPU training
   early_stopping_patience: 2
   device: "auto"                        # Automatically selects CUDA if available, else CPU
+  num_workers: 2                        # DataLoader worker processes
 
 evaluation:
   default_threshold: 0.5

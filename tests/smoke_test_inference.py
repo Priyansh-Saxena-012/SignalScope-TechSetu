@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import torch
 from torch.utils.data import DataLoader
 
-from model.backbone import build_classifier
+from src.model.backbone import build_classifier
 from src.data.dataset import SignalScopeDataset
 from src.data.transforms import get_eval_transforms
 from src.evaluation.evaluate import (

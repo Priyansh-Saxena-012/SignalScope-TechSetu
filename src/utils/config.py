@@ -49,6 +49,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "mixed_precision": True,
         "early_stopping_patience": 2,
         "device": "auto",               # "cuda", "cpu", or "auto"
+        "num_workers": 2,               # DataLoader worker processes
     },
     "evaluation": {
         "default_threshold": 0.5,

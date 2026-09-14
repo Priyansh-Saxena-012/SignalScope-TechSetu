@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import torch
 
-from model.backbone import SUPPORTED_BACKBONES, SignalScopeClassifier, build_classifier
-from model.train import SignalScopeTrainer, resolve_device, set_seed
+from src.model.backbone import SUPPORTED_BACKBONES, SignalScopeClassifier, build_classifier
+from src.model.train import SignalScopeTrainer, resolve_device, set_seed
 from src.evaluation.evaluate import (
     compute_metrics,
     evaluate_with_generator_breakdown,

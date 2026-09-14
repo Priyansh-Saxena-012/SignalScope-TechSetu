@@ -39,7 +39,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Run prediction via standardized predict interface
-python model/predict.py --image path/to/image.jpg
+python src/model/predict.py --image path/to/image.jpg
 ```
 
 ---

@@ -13,4 +13,4 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-.venv/bin/python model/predict.py --image "$1"
+.venv/bin/python src/model/predict.py --image "$1"

@@ -13,4 +13,4 @@ IF "%~1"=="" (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" model\predict.py --image "%~1"
+".venv\Scripts\python.exe" src\model\predict.py --image "%~1"

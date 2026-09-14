@@ -136,7 +136,7 @@ def predict(image: Image.Image) -> Dict[str, Any]:
 
     Tries the real ``model.predict`` contract first; falls back to a clearly
     labeled mock whenever real weights are unavailable (currently always,
-    since ``model/weights/`` has no trained checkpoint yet).
+    since ``src/model/weights/`` has no trained checkpoint yet).
     """
     if MODEL_AVAILABLE:
         # delete=False + manual cleanup: on Windows, a NamedTemporaryFile

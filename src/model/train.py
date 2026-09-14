@@ -25,8 +25,15 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+# Ensure project root is in sys.path when executed directly (python src/model/train.py)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.model.backbone import build_classifier
+from src.data.dataset import SignalScopeDataset, create_development_splits
 from src.data.path_safety import validate_path_safety
+from src.data.transforms import get_eval_transforms, get_train_transforms
 from src.evaluation.evaluate import compute_metrics
 from src.utils.config import load_config, save_config
 
@@ -280,6 +287,40 @@ def main() -> None:
         print("Once GenImage is mounted, specify data.data_dir in the configuration.")
         print("=" * 65)
         sys.exit(0)
+
+    data_cfg = cfg["data"]
+    splits = create_development_splits(
+        data_dir=data_dir,
+        train_ratio=data_cfg.get("train_ratio", 0.70),
+        val_seen_ratio=data_cfg.get("val_seen_ratio", 0.15),
+        val_unseen_ratio=data_cfg.get("val_unseen_ratio", 0.15),
+        seed=cfg["experiment"].get("seed", 42),
+        unseen_generators=data_cfg.get("unseen_generators"),
+        held_out_test_dir=data_cfg.get("held_out_test_dir"),
+    )
+    print("=" * 65)
+    print(f"Split Strategy: {splits['split_strategy']}")
+    print(json.dumps(splits["split_summary"], indent=2))
+    print("=" * 65)
+
+    image_size = cfg["model"].get("image_size", 224)
+    train_dataset = SignalScopeDataset(splits["train"], transform=get_train_transforms(image_size))
+    val_dataset = SignalScopeDataset(splits["internal_val_seen"], transform=get_eval_transforms(image_size))
+
+    train_cfg = cfg["training"]
+    batch_size = train_cfg.get("batch_size", 32)
+    num_workers = train_cfg.get("num_workers", 2)
+
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+    )
+
+    trainer = SignalScopeTrainer(cfg, train_loader=train_loader, val_loader=val_loader)
+    results = trainer.fit()
+    print(json.dumps(results, indent=2, default=str))
 
 
 if __name__ == "__main__":

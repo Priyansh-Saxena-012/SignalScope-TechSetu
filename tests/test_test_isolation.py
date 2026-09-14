@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import pytest
 
-from model.train import SignalScopeTrainer
+from src.model.train import SignalScopeTrainer
 from src.data.dataset import create_development_splits
 from src.data.path_safety import (
     DEFAULT_PROTECTED_TEST_DIRS,

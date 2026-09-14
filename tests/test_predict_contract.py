@@ -1,6 +1,6 @@
 """Tests for SignalScope Prediction Interface Contract.
 
-Validates that model/predict.py strictly satisfies the required JSON schema,
+Validates that src/model/predict.py strictly satisfies the required JSON schema,
 data types, error handling, and honest indication of untrained status in Stage 1.
 """
 
@@ -11,7 +11,7 @@ import sys
 from PIL import Image
 import pytest
 
-from model.predict import (
+from src.model.predict import (
     REQUIRED_SCHEMA_KEYS,
     ModelNotAvailableError,
     predict,
@@ -75,10 +75,10 @@ def test_predict_raises_on_missing_file():
 
 
 def test_cli_predict_contract(temp_image):
-    """Verify that model/predict.py can be invoked via CLI and outputs valid JSON."""
+    """Verify that src/model/predict.py can be invoked via CLI and outputs valid JSON."""
     cmd = [
         sys.executable,
-        os.path.join("model", "predict.py"),
+        os.path.join("src", "model", "predict.py"),
         "--image",
         temp_image,
     ]
