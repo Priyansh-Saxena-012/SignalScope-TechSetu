@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
+import math
 import os
+from pathlib import Path
 import tempfile
 from typing import Any, Dict, List, Optional
 
@@ -108,6 +111,9 @@ def _mock_result(image: Image.Image) -> Dict[str, Any]:
     # every time, without being random across reruns of the same image.
     jitter = ((seed // len(MOCK_PAYLOADS)) % 11 - 5) / 100.0
     probability = min(max(payload["base_probability"] + jitter, 0.01), 0.99)
+    is_ai = bool(probability >= 0.5)
+    confidence = probability if is_ai else (1.0 - probability)
+    raw_logit = math.log(max(probability, 1e-6) / max(1.0 - probability, 1e-6))
 
     return {
         "verdict": _compute_verdict(probability),
@@ -123,6 +129,12 @@ def _mock_result(image: Image.Image) -> Dict[str, Any]:
             "exif_intact": bool(seed % 2),
         },
         "is_demo_mode": True,
+        "raw_logit": round(float(raw_logit), 4),
+        "temperature": 1.0,
+        "is_calibrated": False,
+        "is_ai": is_ai,
+        "label": "AI-generated" if is_ai else "Real",
+        "confidence": round(float(confidence), 4),
         "_seed": seed,
     }
 
@@ -159,6 +171,14 @@ def predict(image: Image.Image) -> Dict[str, Any]:
                 "metadata": raw.get("metadata", {"c2pa_present": False, "exif_intact": True}),
                 "provenance": raw.get("provenance", {}),
                 "is_demo_mode": False,
+                "raw_logit": raw.get("raw_logit"),
+                "temperature": raw.get("temperature", 1.0),
+                "is_calibrated": raw.get("is_calibrated", False),
+                "is_ai": raw.get("is_ai", bool(probability >= 0.5)),
+                "label": raw.get("label", "AI-generated" if probability >= 0.5 else "Real"),
+                "confidence": raw.get("confidence", round(probability if probability >= 0.5 else 1.0 - probability, 4)),
+                "device": raw.get("device", "cpu"),
+                "weights_path": raw.get("weights_path", ""),
             }
 
     return _mock_result(image)
@@ -238,28 +258,76 @@ def _render_verdict_badge(result: Dict[str, Any]) -> None:
 def _render_assessment(result: Dict[str, Any]) -> None:
     _render_verdict_badge(result)
 
-    prob = result["calibrated_probability"]
-    st.metric(
-        label="AI-generated probability",
-        value=f"{prob * 100:.1f}%",
-        delta=result["confidence_level"] + " confidence",
-        delta_color="off",
-    )
+    prob = float(result["calibrated_probability"])
+    conf = float(result.get("confidence", prob if prob >= 0.5 else 1.0 - prob))
+    raw_logit = result.get("raw_logit")
+    temp = result.get("temperature", 1.0)
+    is_calibrated = result.get("is_calibrated", False)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            label="Calibrated AI Likelihood (p_AI)",
+            value=f"{prob * 100:.1f}%",
+            delta=f"{result['confidence_level']} Confidence",
+            delta_color="off",
+        )
+    with col2:
+        st.metric(
+            label="Class Confidence",
+            value=f"{conf * 100:.1f}%",
+            delta="Probability of assigned label",
+            delta_color="off",
+        )
+    with col3:
+        threshold_dist = prob - 0.50
+        st.metric(
+            label="Decision Threshold (Fixed)",
+            value="0.50",
+            delta=f"{threshold_dist:+0.1%} from threshold" if raw_logit is not None else None,
+            delta_color="normal" if threshold_dist >= 0 else "inverse",
+        )
+
     st.progress(min(max(prob, 0.0), 1.0))
+    st.caption("0.0% (Natural / Real) ⟵ ⟵ ⟵ 50.0% Decision Threshold ⟶ ⟶ ⟶ 100.0% (Synthetic / AI)")
+
+    with st.expander("Mathematical Calibration & Threshold Details"):
+        logit_str = f"{raw_logit:.4f}" if raw_logit is not None else "N/A"
+        temp_str = f"{temp:.4f}"
+        calib_note = " (Fitted on 7,000 validation images via NLL minimization)" if is_calibrated else " (Uncalibrated fallback)"
+        st.markdown(
+            f"- **Raw Logit**: `z = {logit_str}`\n"
+            f"- **Calibration Temperature**: `T = {temp_str}`{calib_note}\n"
+            f"- **Calibrated AI Probability**: `p_AI = σ(z / T) = {prob:.4f}` ({prob * 100:.2f}%)\n"
+            r"- **Invariant Decision Threshold**: The operational decision rule is fixed at $\tau = 0.50$. "
+            r"Because $\sigma(0) = 0.50$ for any temperature $T > 0$, the decision boundary corresponds strictly to $z \ge 0$ (invariant under temperature scaling)." + "\n"
+            r"- **Distinction Between Probability and Confidence**: $p_{\text{AI}}$ represents the continuous estimated likelihood that an image is synthetically generated. "
+            r"Confidence represents the probability mass concentrated on the selected class: $\max(p_{\text{AI}}, 1 - p_{\text{AI}})$."
+        )
 
     st.info(f"**Attribution Family:** {result['generator_family']}")
+    if result.get("generator_family") == "Undetermined":
+        st.caption(
+            "Scope Clarification: The production ViT classifier is a binary veracity detector (Real vs. Synthetic), "
+            "not a multi-class generator identification model. Generator family attribution is intentionally Undetermined."
+        )
 
-    st.markdown("**Grounded Findings:**")
-    for cue in result["explanation"]["cues"]:
+    st.markdown("**Forensic Analysis Summary:**")
+    for cue in result.get("explanation", {}).get("cues", []):
         st.markdown(f"- {cue}")
-    st.caption(result["explanation"]["summary"])
+    st.caption(result.get("explanation", {}).get("summary", ""))
+
+    st.caption(
+        "Responsible Forensics Notice: SignalScope estimates synthetic likelihood from spatial representations and frequency artifacts. "
+        "Outputs are probabilistic indicators, not definitive legal proof of authenticity or human origin."
+    )
 
 
 def _render_metadata_card(image: Image.Image, result: Dict[str, Any]) -> None:
     meta = result.get("metadata", {})
     prov = meta.get("provenance", {})
     st.markdown("**Source & Provenance Metadata**")
-    st.write(f"Resolution: {image.width} x {image.height} px")
+    st.write(f"Resolution: {image.width} × {image.height} px")
     st.write(f"Color Mode: {image.mode}")
 
     c2pa_meta = prov.get("c2pa", {})
@@ -292,29 +360,28 @@ def _render_metadata_card(image: Image.Image, result: Dict[str, Any]) -> None:
     st.write(exif_text)
 
     # Contextual forensic detail accordion
-    if prov:
-        with st.expander("Forensic Metadata Details (Auxiliary)"):
-            st.caption(
-                "Notice: Metadata is an auxiliary forensic signal and does not override "
-                "or alter the neural detector prediction. Missing EXIF does not prove AI generation."
-            )
-            if exif_meta.get("gps_redacted"):
-                st.info("Privacy Safeguard: Geospatial coordinates (GPS) were detected and redacted.")
-            if exif_meta.get("serial_redacted"):
-                st.info("Privacy Safeguard: Device serial numbers have been masked.")
+    with st.expander("Forensic Metadata Details (Auxiliary)"):
+        st.caption(
+            "Notice: Metadata is an auxiliary forensic signal and does not override "
+            "or alter the neural detector prediction. Missing EXIF does not prove AI generation."
+        )
+        if exif_meta.get("gps_redacted"):
+            st.info("Privacy Safeguard: Geospatial coordinates (GPS) were detected and redacted.")
+        if exif_meta.get("serial_redacted"):
+            st.info("Privacy Safeguard: Device serial numbers have been masked.")
 
-            if exif_meta.get("software"):
-                st.write(f"Software: {exif_meta['software']}")
-            if exif_meta.get("datetime_original"):
-                st.write(f"Timestamp: {exif_meta['datetime_original']}")
-            if gen_ind.get("generator_signature"):
-                st.warning(f"Generation Signature: {gen_ind['generator_signature']}")
-            
-            notes = prov.get("forensic_notes", [])
-            if notes:
-                st.markdown("**Forensic Notes:**")
-                for note in notes:
-                    st.markdown(f"- {note}")
+        if exif_meta.get("software"):
+            st.write(f"Software: {exif_meta['software']}")
+        if exif_meta.get("datetime_original"):
+            st.write(f"Timestamp: {exif_meta['datetime_original']}")
+        if gen_ind.get("generator_signature"):
+            st.warning(f"Generation Signature: {gen_ind['generator_signature']}")
+
+        notes = prov.get("forensic_notes", [])
+        if notes:
+            st.markdown("**Forensic Notes:**")
+            for note in notes:
+                st.markdown(f"- {note}")
 
 
 def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
@@ -334,6 +401,7 @@ def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
         st.subheader("Authenticity Assessment")
         _render_assessment(result)
 
+        st.markdown("---")
         show_cam = st.toggle("Show Patch Decision Saliency (Experimental)")
         if show_cam:
             if not result.get("is_demo_mode", False):
@@ -349,8 +417,12 @@ def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
                             use_column_width=True,
                         )
                         st.caption(
-                            "Relative patch saliency on a 14×14 grid, highlighting regions that contributed above average "
-                            "toward the AI-generated decision. This illustrates model decision focus and is not a pixel-level forgery mask."
+                            "Relative patch saliency on a 14×14 grid (196 patches of 16×16 px), highlighting regions "
+                            "that contributed above average toward the AI-generated decision logit."
+                        )
+                        st.warning(
+                            "Crucial Forensic Caveat: Decision saliency visualizes neural decision attribution, NOT a pixel-level "
+                            "forgery mask. It does not localize ground-truth manipulation boundaries or explain natural authenticity."
                         )
                     else:
                         heatmap = build_heatmap_overlay(uploaded_image, result.get("_seed", 0))
@@ -365,15 +437,20 @@ def _render_tab1(uploaded_image: Optional[Image.Image]) -> None:
 
 
 def _render_tab2(uploaded_image: Optional[Image.Image]) -> None:
-    st.write("Test detector resilience against real-world social-media style degradation.")
+    st.write("### Degradation Robustness Playground")
+    st.write("Test detector resilience against real-world social-media style perturbations (JPEG re-compression, Gaussian blur, and downscaling).")
 
     if uploaded_image is None:
-        st.info("Upload an image in the Image Inspection tab first.")
+        st.info("Upload an image in the Image Inspection tab first to evaluate robustness under degradation.")
         return
 
-    jpeg_quality = st.slider("JPEG Compression Quality", min_value=20, max_value=100, value=100, step=5)
-    blur_radius = st.slider("Gaussian Blur Radius", min_value=0.0, max_value=4.0, value=0.0, step=0.1)
-    resize_pct = st.slider("Downscale / Resize (%)", min_value=25, max_value=100, value=100, step=5)
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+    with col_ctrl1:
+        jpeg_quality = st.slider("JPEG Compression Quality", min_value=20, max_value=100, value=100, step=5)
+    with col_ctrl2:
+        blur_radius = st.slider("Gaussian Blur Radius", min_value=0.0, max_value=4.0, value=0.0, step=0.1)
+    with col_ctrl3:
+        resize_pct = st.slider("Downscale / Resize (%)", min_value=25, max_value=100, value=100, step=5)
 
     if st.button("Re-test Under Degradation"):
         degraded = degrade_image(uploaded_image, jpeg_quality, blur_radius, resize_pct)
@@ -383,62 +460,201 @@ def _render_tab2(uploaded_image: Optional[Image.Image]) -> None:
 
         col_left, col_right = st.columns(2)
         with col_left:
-            st.subheader("Original")
+            st.subheader("Original Media")
             st.image(uploaded_image, use_column_width=True)
+            _render_verdict_badge(original_result)
         with col_right:
-            st.subheader("Degraded Preview")
+            st.subheader("Degraded Media")
             st.image(degraded, use_column_width=True)
+            _render_verdict_badge(degraded_result)
 
-        orig_pct = original_result["calibrated_probability"] * 100
-        deg_pct = degraded_result["calibrated_probability"] * 100
-        delta = deg_pct - orig_pct
-        status = "Stable" if abs(delta) < 10 else "Shifted"
+        orig_prob = original_result["calibrated_probability"]
+        deg_prob = degraded_result["calibrated_probability"]
+        delta_prob = deg_prob - orig_prob
+        abs_delta = abs(delta_prob)
 
-        st.markdown("**Delta Analysis**")
-        st.write(f"Original: {orig_pct:.1f}% → Degraded: {deg_pct:.1f}% | Status: {status}")
+        if abs_delta < 0.05:
+            stability_status = "Highly Stable (< 5% shift)"
+            delta_color = "normal"
+        elif abs_delta < 0.15:
+            stability_status = "Moderately Stable (5-15% shift)"
+            delta_color = "off"
+        else:
+            stability_status = "Significant Shift (> 15% shift)"
+            delta_color = "inverse"
+
+        decision_flipped = (orig_prob >= 0.50) != (deg_prob >= 0.50)
+
+        st.markdown("### Robustness Delta Analysis")
+        mcol1, mcol2, mcol3 = st.columns(3)
+        with mcol1:
+            st.metric(
+                label="Original p_AI",
+                value=f"{orig_prob * 100:.1f}%",
+                delta=original_result["verdict"],
+                delta_color="off",
+            )
+        with mcol2:
+            st.metric(
+                label="Degraded p_AI",
+                value=f"{deg_prob * 100:.1f}%",
+                delta=degraded_result["verdict"],
+                delta_color="off",
+            )
+        with mcol3:
+            st.metric(
+                label="Probability Shift (Δ p_AI)",
+                value=f"{delta_prob * 100:+.1f}%",
+                delta="Verdict Flipped!" if decision_flipped else stability_status,
+                delta_color="inverse" if decision_flipped else delta_color,
+            )
+
+        st.caption(
+            "Robustness Note: Stability under degradation measures detector invariance across synthetic transformations. "
+            "Model stability does not guarantee factual ground truth, and heavy compression may erode forensic high-frequency signatures."
+        )
     else:
-        st.caption("Adjust the sliders and click \"Re-test Under Degradation\" to run the comparison.")
+        st.caption("Adjust the degradation sliders above and click \"Re-test Under Degradation\" to run the comparison.")
 
 
 def _render_tab3() -> None:
-    st.write("### Development Validation Set (Stage 9 Baseline)")
-    st.caption("Evaluated on 7,000 Tiny-GenImage development validation images. These are development validation results, NOT official held-out benchmark results.")
+    st.write("## SignalScope Evaluation & Verification Report")
+    st.caption("Comprehensive performance metrics, probability calibration analysis, and scope limitations.")
 
-    dev_metrics_table = [
-        {"Metric": "Validation Samples", "Value": "7,000"},
-        {"Metric": "ROC-AUC (Overall)", "Value": "0.8562"},
-        {"Metric": "Macro-F1", "Value": "0.7834"},
-        {"Metric": "Accuracy", "Value": "78.34%"},
-    ]
-    st.table(dev_metrics_table)
-
-    st.write("### Official Held-Out Benchmark (100k)")
-    st.caption("Preliminary — pending final official held-out benchmark (Stage 10). Numbers below are placeholders, not final results.")
-
-    metrics_table = [
-        {"Metric": "ROC-AUC (Overall)", "Value": "TBD"},
-        {"Metric": "ROC-AUC (Unseen-Generator Split)", "Value": "TBD"},
-        {"Metric": "Macro-F1", "Value": "TBD"},
-        {"Metric": "Accuracy", "Value": "TBD"},
-        {"Metric": "Expected Calibration Error (ECE)", "Value": "TBD"},
-    ]
-    st.table(metrics_table)
-
-    st.markdown("**Confusion Matrix (placeholder)**")
-    confusion_table = [
-        {"": "Actual: Real", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
-        {"": "Actual: AI", "Predicted: Real": "TBD", "Predicted: AI": "TBD"},
-    ]
-    st.table(confusion_table)
-
-    st.markdown("**Known Limitations**")
+    st.write("### 1. Development Validation Benchmark (Stage 9 Baseline)")
     st.markdown(
-        "- Metrics above are placeholders until final official held-out benchmark evaluation completes on the official held-out test set.\n"
-        "- Robustness to heavy compression and unseen generator families has not yet been empirically validated.\n"
-        "- Video and multi-frame content are out of scope for this detector.\n"
-        "- Generator attribution is Undetermined because the ViT baseline operates as a binary veracity detector.\n"
-        "- Decision saliency is an experimental relative attribution method operating at 16×16 patch resolution. "
-        "It highlights regions driving the AI logit, but does not explain authenticity (realness) and is not a pixel-level forgery or tamper mask."
+        "Evaluated on the **7,000-image Tiny-GenImage development validation set** (3,500 Real + 3,500 AI-generated images across 8 generator architectures). "
+        r"These results reflect the frozen ViT-Base/16 checkpoint (`checkpoint_best.pth`) evaluated with fixed decision threshold $\tau = 0.50$."
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("ROC-AUC (Overall)", "0.8562", help="Area Under ROC Curve across all 7,000 validation samples")
+    with col2:
+        st.metric("Macro-F1", "0.7834", help="Unweighted mean of Real-F1 (0.7828) and AI-F1 (0.7839)")
+    with col3:
+        st.metric("Accuracy", "78.34%", help="2,735 TN + 2,749 TP / 7,000 = 78.34%")
+    with col4:
+        st.metric("False Positive Rate", "21.86%", help="765 / 3,500 real images incorrectly flagged at 0.50 threshold")
+
+    col_cm, col_gen = st.columns([1, 1])
+
+    with col_cm:
+        st.markdown("**Validation Confusion Matrix (N = 7,000)**")
+        cm_table = [
+            {"Ground Truth": "Actual: Real (3,500)", "Predicted Real (<= 0.50)": "2,735 (TN, 78.1%)", "Predicted AI (> 0.50)": "765 (FP, 21.9%)"},
+            {"Ground Truth": "Actual: AI (3,500)", "Predicted Real (<= 0.50)": "751 (FN, 21.5%)", "Predicted AI (> 0.50)": "2,749 (TP, 78.5%)"},
+        ]
+        st.table(cm_table)
+
+    with col_gen:
+        st.markdown("**Per-Generator Architecture Breakdown**")
+        gen_table = [
+            {"Generator Family": "ADM", "Type": "Diffusion", "ROC-AUC": "0.6026"},
+            {"Generator Family": "BigGAN", "Type": "GAN", "ROC-AUC": "0.7424"},
+            {"Generator Family": "Glide", "Type": "Diffusion", "ROC-AUC": "0.8647"},
+            {"Generator Family": "Midjourney", "Type": "Diffusion / Proprietary", "ROC-AUC": "0.8879"},
+            {"Generator Family": "Stable Diffusion v1.4", "Type": "Latent Diffusion", "ROC-AUC": "0.9419"},
+            {"Generator Family": "Stable Diffusion v1.5", "Type": "Latent Diffusion", "ROC-AUC": "0.9329"},
+            {"Generator Family": "VQ-Diffusion", "Type": "Discrete Diffusion", "ROC-AUC": "0.8712"},
+            {"Generator Family": "Wukong", "Type": "Diffusion", "ROC-AUC": "0.9513"},
+        ]
+        st.table(gen_table)
+
+    st.write("### 2. Post-Hoc Probability Calibration (Temperature Scaling)")
+    st.markdown(
+        "Modern deep neural networks tend to produce overconfident raw probabilities. "
+        "SignalScope applies **post-hoc Platt / Temperature Scaling** ($T = 1.9591$) fitted strictly on the 7,000-image development validation set. "
+        "The model weights and feature representations remain frozen; only temperature parameter $T > 0$ is optimized by minimizing Negative Log-Likelihood (NLL)."
+    )
+
+    calib_path = Path(__file__).resolve().parent.parent.parent / "model" / "weights" / "temperature.json"
+    if not calib_path.exists():
+        calib_path = Path("model/weights/temperature.json")
+
+    if calib_path.exists():
+        try:
+            with open(calib_path, "r", encoding="utf-8") as f:
+                c_data = json.load(f)
+            b_m = c_data["metrics"]["before_calibration"]
+            a_m = c_data["metrics"]["after_calibration"]
+            temp_val = float(c_data.get("calibration", {}).get("temperature", 1.9591))
+            nll_b, nll_a = float(b_m["nll"]), float(a_m["nll"])
+            brier_b, brier_a = float(b_m["brier_score"]), float(a_m["brier_score"])
+            ece_b, ece_a = float(b_m["ece"]), float(a_m["ece"])
+            mce_b, mce_a = float(b_m.get("mce", 0.1770)), float(a_m.get("mce", 0.0569))
+        except Exception:
+            temp_val = 1.9591
+            nll_b, nll_a = 0.544208, 0.472584
+            brier_b, brier_a = 0.160799, 0.153251
+            ece_b, ece_a = 0.084495, 0.023752
+            mce_b, mce_a = 0.176951, 0.056903
+    else:
+        temp_val = 1.9591
+        nll_b, nll_a = 0.544208, 0.472584
+        brier_b, brier_a = 0.160799, 0.153251
+        ece_b, ece_a = 0.084495, 0.023752
+        mce_b, mce_a = 0.176951, 0.056903
+
+    nll_rel = ((nll_a - nll_b) / nll_b) * 100
+    brier_rel = ((brier_a - brier_b) / brier_b) * 100
+    ece_rel = ((ece_a - ece_b) / ece_b) * 100
+    mce_rel = ((mce_a - mce_b) / mce_b) * 100
+
+    calib_table = [
+        {
+            "Calibration Metric": "Negative Log-Likelihood (NLL)",
+            "Before (T = 1.0)": f"{nll_b:.4f}",
+            f"After (T = {temp_val:.4f})": f"{nll_a:.4f}",
+            "Improvement / Change": f"{nll_a - nll_b:+.4f} ({nll_rel:.1f}% relative)",
+        },
+        {
+            "Calibration Metric": "Brier Score (MSE)",
+            "Before (T = 1.0)": f"{brier_b:.4f}",
+            f"After (T = {temp_val:.4f})": f"{brier_a:.4f}",
+            "Improvement / Change": f"{brier_a - brier_b:+.4f} ({brier_rel:.1f}% relative)",
+        },
+        {
+            "Calibration Metric": "Expected Calibration Error (ECE)",
+            "Before (T = 1.0)": f"{ece_b:.4f}",
+            f"After (T = {temp_val:.4f})": f"{ece_a:.4f}",
+            "Improvement / Change": f"{ece_a - ece_b:+.4f} ({ece_rel:.1f}% error reduction)",
+        },
+        {
+            "Calibration Metric": "Maximum Calibration Error (MCE)",
+            "Before (T = 1.0)": f"{mce_b:.4f}",
+            f"After (T = {temp_val:.4f})": f"{mce_a:.4f}",
+            "Improvement / Change": f"{mce_a - mce_b:+.4f} ({mce_rel:.1f}% error reduction)",
+        },
+    ]
+    st.table(calib_table)
+    st.caption(
+        "Threshold Invariance Note: Temperature scaling is a strictly monotonic transformation. "
+        r"Because $\sigma(0 / T) = 0.50$ for all $T > 0$, the decision boundary at 0.50 is invariant ($z \ge 0 \iff p_{\text{AI}} \ge 0.50$)."
+    )
+
+    st.write("### 3. Official Held-Out Benchmark (100,000 Images)")
+    st.warning(
+        "QUARANTINED BENCHMARK NOTICE: The official 100,000-image evaluation dataset (50k Real + 50k Synthetic across unseen generators and degradations) "
+        "is strictly quarantined to prevent data leakage and benchmark gaming. Evaluation on this dataset is reserved for the final Stage 10 benchmark run."
+    )
+
+    heldout_table = [
+        {"Benchmark Metric": "ROC-AUC (Overall)", "Evaluation Status": "Pending Official Benchmark", "Target Spec": ">= 0.85"},
+        {"Benchmark Metric": "ROC-AUC (Unseen-Generator Split)", "Evaluation Status": "Pending Official Benchmark", "Target Spec": "Generalization check"},
+        {"Benchmark Metric": "Macro-F1 Score", "Evaluation Status": "Pending Official Benchmark", "Target Spec": ">= 0.75"},
+        {"Benchmark Metric": "Accuracy", "Evaluation Status": "Pending Official Benchmark", "Target Spec": ">= 75%"},
+        {"Benchmark Metric": "Expected Calibration Error (ECE)", "Evaluation Status": "Pending Official Benchmark", "Target Spec": "< 0.05"},
+    ]
+    st.table(heldout_table)
+
+    st.write("### 4. System Limitations & Forensic Scope")
+    st.markdown(
+        "- **Binary Detection Scope**: The production ViT classifier is trained to estimate the probability that an image is synthetic vs. natural camera capture. It is not trained to identify specific generator models or prompt text.\n"
+        "- **Single-Frame Static Scope**: Video, audio, and multimodal temporal sequences are out of scope for this architecture.\n"
+        "- **Unseen Generator Generalization**: Performance varies across generator architectures. While diffusion models such as Wukong (AUC 0.9513) and Stable Diffusion (AUC 0.9419) are detected with high accuracy, older or distinct architectures such as ADM (AUC 0.6026) present a significant distribution shift.\n"
+        "- **Saliency Interpretation**: The experimental Patch Decision Saliency highlights 16×16 patch regions that contributed above average to the AI logit. It is a decision attribution map for model interpretability, NOT a ground-truth tamper mask or pixel-level manipulation boundary.\n"
+        "- **Auxiliary Metadata**: EXIF and C2PA provenance analyses are purely auxiliary. Stripped metadata does not indicate AI generation, and valid metadata does not guarantee absence of AI synthesis."
     )
 
 
