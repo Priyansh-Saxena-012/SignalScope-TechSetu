@@ -331,6 +331,9 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# 3. Run prediction via standardized predict interface
+python src/model/predict.py --image path/to/image.jpg
 ```
 
 ### 2. Running Inference via CLI
