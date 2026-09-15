@@ -15,10 +15,10 @@ model:
   image_size: 224
 
 data:
-  data_dir: "data/train_subset"          # 70,000-image balanced subset of CIFAKE train (REAL/ vs FAKE/) - all remaining unused images
+  data_dir: "src/data/train_subset"          # 70,000-image balanced subset (REAL/ vs FAKE/)
   train_data_path: null                 # Unused by the loader (create_development_splits reads data_dir)
   val_data_path: null                   # Unused by the loader (create_development_splits reads data_dir)
-  held_out_test_dir: "data/test_subset"  # 2,000-image balanced subset of CIFAKE test (evaluated every epoch)
+  held_out_test_dir: "src/data/test_subset"  # 2,000-image balanced subset (evaluated every epoch)
   unseen_data_path: null                # Optional explicit path
   train_ratio: 0.70
   val_seen_ratio: 0.15
