@@ -20,6 +20,12 @@ import random
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+# Ensure project root is in sys.path for direct script execution
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -35,6 +41,7 @@ from src.model.backbone import build_classifier
 from src.data.dataset import SignalScopeDataset, create_development_splits
 from src.data.inspect_data import VALID_IMAGE_EXTENSIONS, detect_class_from_path, detect_generator_from_path
 from src.data.path_safety import validate_path_safety
+from src.data.transforms import get_eval_transforms, get_train_transforms
 from src.data.transforms import get_eval_transforms, get_train_transforms
 from src.evaluation.evaluate import compute_metrics
 from src.utils.config import load_config, save_config
@@ -153,7 +160,22 @@ class SignalScopeTrainer:
         weight_decay = float(train_cfg.get("weight_decay", 1e-2))
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
-        # 5. Mixed Precision Scaler
+        # 5. Learning Rate Scheduler
+        scheduler_type = train_cfg.get("scheduler", "cosine")
+        epochs = int(train_cfg.get("epochs", 5))
+        min_lr = float(train_cfg.get("min_lr", 1e-6))
+        if scheduler_type == "cosine":
+            self.scheduler: Optional[Any] = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(1, epochs), eta_min=min_lr
+            )
+        elif scheduler_type is None or scheduler_type == "none":
+            self.scheduler = None
+        else:
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer, T_max=max(1, epochs), eta_min=min_lr
+            )
+
+        # 6. Mixed Precision Scaler
         use_amp = bool(train_cfg.get("mixed_precision", True)) and self.device.type == "cuda"
         self.scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         self.use_amp = use_amp
@@ -179,6 +201,7 @@ class SignalScopeTrainer:
             "val_roc_auc": [],
             "val_accuracy": [],
             "val_macro_f1": [],
+            "learning_rate": [],
         }
         if self.test_loader is not None:
             self.history["test_roc_auc"] = []
@@ -195,6 +218,7 @@ class SignalScopeTrainer:
             "backbone": self.model.backbone_name,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict() if self.scheduler else None,
             "val_roc_auc": val_auc,
             "config": self.config,
         }
@@ -220,6 +244,8 @@ class SignalScopeTrainer:
         total_loss = 0.0
         all_labels = []
         all_probs = []
+        total_val_samples = 0
+        max_batches = self.config["training"].get("max_batches_per_epoch")
 
         with torch.no_grad():
             for images, labels, _ in tqdm(loader, desc=desc, leave=False):
@@ -235,20 +261,26 @@ class SignalScopeTrainer:
 
                 all_probs.extend(probs)
                 all_labels.extend(labels.cpu().numpy())
+                total_val_samples += images.size(0)
 
-        avg_loss = total_loss / len(loader.dataset) if len(loader.dataset) > 0 else 0.0
+        avg_loss = total_loss / total_val_samples if total_val_samples > 0 else 0.0
         metrics = compute_metrics(all_labels, all_probs, threshold=0.5)
         metrics["loss"] = round(avg_loss, 4)
         return metrics
 
     def fit(self) -> Dict[str, Any]:
-        """Execute training loop over configured epochs with early stopping."""
+        """Execute training loop over configured epochs with early stopping and lr scheduling."""
         if self.train_loader is None or self.val_loader is None:
             raise ValueError("Cannot train: train_loader or val_loader is not set.")
 
         epochs = self.config["training"].get("epochs", 5)
         patience = self.config["training"].get("early_stopping_patience", 2)
+        max_batches = self.config["training"].get("max_batches_per_epoch")
+        log_interval = self.config["training"].get("log_interval", 50)
         no_improvement_count = 0
+
+        total_train_batches = len(self.train_loader) if hasattr(self.train_loader, "__len__") else 0
+        effective_batches = min(total_train_batches, max_batches) if (max_batches and total_train_batches) else (max_batches or total_train_batches)
 
         for epoch in range(1, epochs + 1):
             self.model.train()
@@ -304,10 +336,22 @@ class SignalScopeTrainer:
             else:
                 no_improvement_count += 1
 
+            best_indicator = " (* Best)" if is_best else ""
+            print(
+                f"  Epoch {epoch} Summary - "
+                f"Train Loss: {epoch_train_loss:.4f} | "
+                f"Val Loss: {val_metrics['loss']:.4f} | "
+                f"Val ROC-AUC: {current_auc:.4f} | "
+                f"Val Acc: {val_metrics['accuracy']:.4f} | "
+                f"Val F1: {val_metrics['macro_f1']:.4f}"
+                f"{best_indicator}"
+            )
+
             self.save_checkpoint(epoch, current_auc, is_best=is_best)
 
             # Early stopping check
             if no_improvement_count >= patience:
+                print(f"  Early stopping triggered: no improvement for {patience} consecutive epochs.")
                 break
 
         # Save history log
@@ -321,6 +365,51 @@ class SignalScopeTrainer:
         }
 
 
+def build_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
+    """Construct PyTorch DataLoaders for Tiny-GenImage training and validation."""
+    data_cfg = config.get("data", {})
+    train_cfg = config.get("training", {})
+    model_cfg = config.get("model", {})
+
+    image_size = model_cfg.get("image_size", 224)
+    batch_size = train_cfg.get("batch_size", 32)
+    num_workers = train_cfg.get("num_workers", 0)
+    held_out_dir = data_cfg.get("held_out_test_dir")
+
+    train_source = data_cfg.get("train_data_path") or DEFAULT_TINY_GENIMAGE_TRAIN_SOURCE
+    val_source = data_cfg.get("val_data_path") or DEFAULT_TINY_GENIMAGE_VAL_SOURCE
+
+    train_transform = get_train_transforms(image_size=image_size)
+    val_transform = get_eval_transforms(image_size=image_size)
+
+    train_ds, val_ds = create_tiny_genimage_datasets(
+        train_source=train_source,
+        val_source=val_source,
+        train_transform=train_transform,
+        val_transform=val_transform,
+        held_out_test_dir=held_out_dir,
+    )
+
+    device, _ = resolve_device(train_cfg.get("device", "auto"))
+    pin_memory = (device.type == "cuda")
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+    return train_loader, val_loader
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="SignalScope Training Entry Point")
     parser.add_argument(
@@ -328,6 +417,30 @@ def main() -> None:
         type=str,
         default="configs/train_config.yaml",
         help="Path to experiment configuration YAML",
+    )
+    parser.add_argument(
+        "--max-batches-per-epoch",
+        type=int,
+        default=None,
+        help="Optional limit on batches per epoch for fast verification/smoke runs",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Override number of training epochs",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Override training batch size",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Override execution device ('cpu', 'cuda', 'auto')",
     )
     args = parser.parse_args()
 

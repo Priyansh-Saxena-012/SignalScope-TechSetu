@@ -20,6 +20,8 @@ ENV/
 /experiments/
 *.zip
 *.tar.gz
+*.pth
+*.parquet
 
 # Trained model weights (large binaries, exported locally per-run)
 src/model/weights/*.pth

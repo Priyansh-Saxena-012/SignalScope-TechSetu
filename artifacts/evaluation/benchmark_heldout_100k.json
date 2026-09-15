@@ -1,0 +1,251 @@
+{
+  "metadata": {
+    "evaluation_timestamp": "2026-09-15T07:13:54Z",
+    "git_commit": "792ef0f82b856ab63c2fa71b173456f051cbdbec",
+    "checkpoint_path": "checkpoint_best.pth",
+    "checkpoint_sha256": "3bd756f4e7558709b8d94a5c05a09ca64d1d8a4a98940a2a1adafff793306834",
+    "device": "cuda",
+    "device_name": "Tesla T4",
+    "torch_version": "2.11.0+cu128",
+    "platform": "Linux-6.6.122+-x86_64-with-glibc2.39",
+    "batch_size": 64,
+    "num_workers": 4,
+    "fp16_autocast": true,
+    "dataset_root": "/content/test_100k/test",
+    "dataset_counts": {
+      "total": 100000,
+      "ai": 50000,
+      "real": 50000
+    },
+    "runtime_seconds": 930.8,
+    "throughput_fps": 107.43
+  },
+  "threshold_used": 0.5,
+  "overall": {
+    "roc_auc": 0.8748,
+    "macro_f1": 0.7982,
+    "accuracy": 0.7982,
+    "precision": 0.7907,
+    "recall": 0.8111,
+    "fpr": 0.2148,
+    "total_samples": 100000,
+    "confusion_matrix": {
+      "tn": 39262,
+      "fp": 10738,
+      "fn": 9443,
+      "tp": 40557,
+      "matrix": [
+        [
+          39262,
+          10738
+        ],
+        [
+          9443,
+          40557
+        ]
+      ]
+    }
+  },
+  "by_generator": {
+    "adm": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.6197,
+      "accuracy": 0.7437,
+      "precision": 0.1818,
+      "recall": 0.3977,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 3614,
+        "tp": 2386,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            3614,
+            2386
+          ]
+        ]
+      }
+    },
+    "biggan": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.9333,
+      "accuracy": 0.8008,
+      "precision": 0.3421,
+      "recall": 0.9307,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 416,
+        "tp": 5584,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            416,
+            5584
+          ]
+        ]
+      }
+    },
+    "glide": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.925,
+      "accuracy": 0.7986,
+      "precision": 0.3371,
+      "recall": 0.9102,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 539,
+        "tp": 5461,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            539,
+            5461
+          ]
+        ]
+      }
+    },
+    "midjourney": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.8668,
+      "accuracy": 0.7851,
+      "precision": 0.3047,
+      "recall": 0.7843,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 1294,
+        "tp": 4706,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            1294,
+            4706
+          ]
+        ]
+      }
+    },
+    "sd14": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.9549,
+      "accuracy": 0.8018,
+      "precision": 0.3444,
+      "recall": 0.94,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 360,
+        "tp": 5640,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            360,
+            5640
+          ]
+        ]
+      }
+    },
+    "sd15": {
+      "ai_sample_count": 8000,
+      "total_evaluated_with_real": 58000,
+      "roc_auc": 0.9559,
+      "accuracy": 0.8066,
+      "precision": 0.4119,
+      "recall": 0.9403,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 478,
+        "tp": 7522,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            478,
+            7522
+          ]
+        ]
+      }
+    },
+    "vqdm": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.7676,
+      "accuracy": 0.7673,
+      "precision": 0.2567,
+      "recall": 0.618,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 2292,
+        "tp": 3708,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            2292,
+            3708
+          ]
+        ]
+      }
+    },
+    "wukong": {
+      "ai_sample_count": 6000,
+      "total_evaluated_with_real": 56000,
+      "roc_auc": 0.9487,
+      "accuracy": 0.8002,
+      "precision": 0.3407,
+      "recall": 0.925,
+      "fpr": 0.2148,
+      "confusion_matrix": {
+        "tn": 39262,
+        "fp": 10738,
+        "fn": 450,
+        "tp": 5550,
+        "matrix": [
+          [
+            39262,
+            10738
+          ],
+          [
+            450,
+            5550
+          ]
+        ]
+      }
+    }
+  }
+}
