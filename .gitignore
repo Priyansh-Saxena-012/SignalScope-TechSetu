@@ -23,6 +23,9 @@ ENV/
 *.pth
 *.parquet
 
+# Trained model weights (large binaries, exported locally per-run)
+src/model/weights/*.pth
+
 # OS specific
 .DS_Store
 Thumbs.db

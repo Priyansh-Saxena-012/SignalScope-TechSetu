@@ -99,6 +99,20 @@ def test_stub_honestly_indicates_model_unavailable(temp_image, monkeypatch):
         predict(temp_image, allow_stub=False)
 
 
+def test_predict_runs_live_inference_when_weights_available(temp_image):
+    """Verify that predict() runs real inference once trained weights are exported."""
+    assert predict_module.DEFAULT_WEIGHTS_PATH.exists(), (
+        "Expected exported weights at src/model/weights/model_weights_fp16.pth for this test run."
+    )
+
+    result = predict(temp_image, allow_stub=True)
+
+    assert result["status"] == "ok"
+    assert result["label"] in {"REAL", "AI-GENERATED"}
+    assert 0.0 <= result["confidence"] <= 1.0
+    assert result["is_ai"] == (result["label"] == "AI-GENERATED")
+
+
 def test_predict_raises_on_missing_file():
     """Verify that predict() raises FileNotFoundError on non-existent input."""
     with pytest.raises(FileNotFoundError):
@@ -111,7 +125,7 @@ def test_cli_predict_contract(temp_image, tmp_path, mock_vit_checkpoint_path):
     nonexistent_weights = str(tmp_path / "nonexistent_weights.pth")
     cmd_stub = [
         sys.executable,
-        os.path.join("model", "predict.py"),
+        os.path.join("src", "model", "predict.py"),
         "--image",
         temp_image,
         "--weights",

@@ -2,8 +2,8 @@
 # Configurable for Google Colab GPU training and local reproducibility.
 
 experiment:
-  name: "signalscope_baseline_vit"
-  output_dir: "experiments/baseline_vit"
+  name: "signalscope_baseline_vit_v4"
+  output_dir: "experiments/baseline_vit_v4"
   seed: 42
   description: "SignalScope primary candidate (ViT-Base/16) on GenImage dataset"
 
@@ -39,6 +39,7 @@ training:
   max_batches_per_epoch: null           # Null for full training, set integer for fast verification
   log_interval: 50                      # Periodic batch progress logging frequency
   device: "auto"                        # Automatically selects CUDA if available, else CPU
+  num_workers: 2                        # DataLoader worker processes
 
 evaluation:
   default_threshold: 0.5

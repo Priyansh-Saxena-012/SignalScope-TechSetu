@@ -28,4 +28,4 @@ if [ "$1" = "--ui" ]; then
     exit 0
 fi
 
-.venv/bin/python model/predict.py --image "$1"
+.venv/bin/python src/model/predict.py --image "$1"

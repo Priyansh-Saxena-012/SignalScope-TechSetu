@@ -52,6 +52,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_batches_per_epoch": None,  # Optional limit for local CPU smoke runs
         "log_interval": 50,             # Periodic batch logging frequency
         "device": "auto",               # "cuda", "cpu", or "auto"
+        "num_workers": 2,               # DataLoader worker processes
     },
     "evaluation": {
         "default_threshold": 0.5,
