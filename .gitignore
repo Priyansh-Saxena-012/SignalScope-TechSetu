@@ -21,6 +21,7 @@ ENV/
 *.zip
 *.tar.gz
 *.pth
+*.parquet
 
 # OS specific
 .DS_Store
