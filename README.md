@@ -250,6 +250,9 @@ The interactive dashboard ([`src/ui/app.py`](src/ui/app.py)) provides three func
 2. **Robustness Playground (Tab 2)**: Interactive sliders for JPEG compression, Gaussian blur, and downscaling to test detector resilience and display real-time probability shift deltas.
 3. **Evaluation & Model Report (Tab 3)**: Summarizes development validation metrics, per-generator performance, calibration curves, and held-out benchmark evaluation results.
 
+### Demonstration Video
+- **Official SIH 2026 Demo Video**: [https://youtu.be/RKESX4ry5gc](https://youtu.be/RKESX4ry5gc)
+
 ---
 
 ## 12. Repository Structure
